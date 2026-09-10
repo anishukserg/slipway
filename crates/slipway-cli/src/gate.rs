@@ -1,7 +1,8 @@
-//! Калитка коммита по решениям 8, 12 и 13: один набор шагов и машинный вердикт.
+//! Калитка коммита по решениям 8, 12, 13 и 15: один набор шагов и машинный
+//! вердикт.
 //!
 //! ```text
-//! cargo slipway gate [--repo <каталог>] [<дерево>]
+//! cargo slipway gate [--repo <каталог>] [--journal-only] [<дерево>]
 //! ```
 //!
 //! Хук pre-commit передаёт выгруженное дерево коммита; без аргумента
@@ -14,18 +15,24 @@
 //! 1. внешние имена — по локальному списку в каталоге git (решение 9); без
 //!    списка шаг называется невыполненным, а не пройденным;
 //! 2. относительные ссылки в markdown ведут в существующие файлы;
-//! 3. форматирование — `cargo fmt --check`;
-//! 4. clippy без предупреждений на всех целях;
-//! 5. сборка всех целей с константными проверками реестров и тесты;
-//! 6. сверка кодов ошибок работает: пробная атака с неверным кодом падает, с
+//! 3. журнал: файлы событий из HEAD не изменены и не удалены, приземления
+//!    совпадают с историей git (решение 15);
+//! 4. форматирование — `cargo fmt --check`;
+//! 5. clippy без предупреждений на всех целях;
+//! 6. сборка всех целей с константными проверками реестров и тесты;
+//! 7. сверка кодов ошибок работает: пробная атака с неверным кодом падает, с
 //!    верным — проходит (решение 12);
-//! 7. атаки — doctest со сверкой кодов под `RUSTC_BOOTSTRAP=1`, в отдельном
+//! 8. атаки — doctest со сверкой кодов под `RUSTC_BOOTSTRAP=1`, в отдельном
 //!    каталоге сборки, с полом по числу прошедших;
-//! 8. документация без предупреждений и битых внутренних ссылок;
-//! 9. сборка всех целей на минимальной версии из `rust-version`;
-//! 10. проба сверки кодов и атаки на минимальной версии, с тем же полом;
-//! 11. зависимости — политика `deny.toml` по сохранённой базе уязвимостей, без
+//! 9. документация без предупреждений и битых внутренних ссылок;
+//! 10. сборка всех целей на минимальной версии из `rust-version`;
+//! 11. проба сверки кодов и атаки на минимальной версии, с тем же полом;
+//! 12. зависимости — политика `deny.toml` по сохранённой базе уязвимостей, без
 //!     сети (решение 13).
+//!
+//! С `--journal-only` — для коммита, дерево которого без журнала уже прошло
+//! калитку, — выполняются шаги 1–3 и сборка крейта документов, где журнал
+//! сворачивается.
 //!
 //! Отсутствующий инструмент — отказ шага, а не пропуск. Шаг без предмета
 //! проверки называется невыполненным, а не пройденным.
@@ -33,7 +40,8 @@
 //! Код возврата: 0 — пройдено; 1 — шаг упал; 2 — ошибка запуска. Последняя
 //! строка — `GATE OK (<n> из <m>; …)` или `GATE FAIL: <шаг>`.
 
-use crate::{git, layout};
+use crate::{git, layout, proof};
+use slipway_journal::Kind;
 use std::ffi::OsString;
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
@@ -43,8 +51,11 @@ use std::process::{Command, ExitStatus, Stdio};
 /// понижение — изменение правила.
 const DOCTEST_FLOOR: usize = 36;
 
-/// Число шагов калитки.
-const TOTAL: usize = 11;
+/// Число шагов полной калитки.
+const TOTAL: usize = 12;
+
+/// Число шагов калитки журнала.
+const JOURNAL_ONLY_TOTAL: usize = 4;
 
 /// Сколько строк ошибок из журнала шага показывать при отказе.
 const ERROR_LINES: usize = 40;
@@ -81,19 +92,20 @@ const PROBE_LIB: &str = r#"//! Проба сверки кодов ошибок �
 
 /// `cargo slipway gate`.
 pub fn run(args: &[OsString]) -> u8 {
+    run_with_verdict(args).0
+}
+
+/// Калитка с вердиктом: код возврата и последняя строка.
+pub fn run_with_verdict(args: &[OsString]) -> (u8, String) {
     let outcome = Args::parse(args)
         .and_then(|args| Gate::open(&args))
         .and_then(Gate::check);
-    match outcome {
-        Ok(verdict) => {
-            println!("{verdict}");
-            0
-        }
-        Err(fail) => {
-            println!("GATE FAIL: {}", fail.step);
-            fail.code
-        }
-    }
+    let (code, verdict) = match outcome {
+        Ok(verdict) => (0, verdict),
+        Err(fail) => (fail.code, format!("GATE FAIL: {}", fail.step)),
+    };
+    println!("{verdict}");
+    (code, verdict)
 }
 
 /// cargo в каталоге `dir` с каталогом сборки `build`. Переменные GIT_* хука
@@ -173,6 +185,7 @@ fn start_fail(step: impl Into<String>) -> Fail {
 struct Args {
     repo: Option<PathBuf>,
     tree: Option<PathBuf>,
+    journal_only: bool,
 }
 
 impl Args {
@@ -180,23 +193,32 @@ impl Args {
         let mut parsed = Args {
             repo: None,
             tree: None,
+            journal_only: false,
         };
         let mut rest = args;
         while let Some((first, tail)) = rest.split_first() {
-            if first.to_str() == Some("--repo") {
-                let (dir, tail) = tail
-                    .split_first()
-                    .ok_or_else(|| start_fail("после --repo нужен каталог"))?;
-                parsed.repo = Some(PathBuf::from(dir));
-                rest = tail;
-            } else if parsed.tree.is_none() {
-                parsed.tree = Some(PathBuf::from(first));
-                rest = tail;
-            } else {
-                return Err(start_fail(format!(
-                    "лишний аргумент {}",
-                    first.to_string_lossy()
-                )));
+            match first.to_str() {
+                Some("--repo") => {
+                    let (dir, tail) = tail
+                        .split_first()
+                        .ok_or_else(|| start_fail("после --repo нужен каталог"))?;
+                    parsed.repo = Some(PathBuf::from(dir));
+                    rest = tail;
+                }
+                Some("--journal-only") => {
+                    parsed.journal_only = true;
+                    rest = tail;
+                }
+                _ if parsed.tree.is_none() => {
+                    parsed.tree = Some(PathBuf::from(first));
+                    rest = tail;
+                }
+                _ => {
+                    return Err(start_fail(format!(
+                        "лишний аргумент {}",
+                        first.to_string_lossy()
+                    )))
+                }
             }
         }
         Ok(parsed)
@@ -204,9 +226,11 @@ impl Args {
 }
 
 struct Gate {
+    root: PathBuf,
     tree: PathBuf,
     git_dir: PathBuf,
     target: PathBuf,
+    journal_only: bool,
     passed: usize,
     skipped: Vec<&'static str>,
 }
@@ -222,9 +246,11 @@ impl Gate {
         fs::create_dir_all(&target)
             .map_err(|_| start_fail(format!("не создать {}", target.display())))?;
         Ok(Gate {
+            root: repo.root,
             tree,
             git_dir: repo.git_dir,
             target,
+            journal_only: args.journal_only,
             passed: 0,
             skipped: Vec::new(),
         })
@@ -233,6 +259,10 @@ impl Gate {
     fn check(mut self) -> Result<String, Fail> {
         self.external_names()?;
         self.markdown_links()?;
+        self.journal()?;
+        if self.journal_only {
+            return self.check_journal_build();
+        }
 
         // Дальше запускается cargo. Без манифеста в самом дереве cargo пошёл бы
         // искать рабочее пространство в родительских каталогах и собрал бы
@@ -372,12 +402,44 @@ impl Gate {
             "GATE OK ({} из {TOTAL}; doctest {doctests}, на {msrv} — {msrv_doctests}",
             self.passed
         );
+        self.append_skipped(&mut verdict);
+        Ok(verdict)
+    }
+
+    /// Калитка журнала: дерево без журнала уже проверено, осталось собрать
+    /// крейт документов — сборка сворачивает журнал (решение 15).
+    fn check_journal_build(mut self) -> Result<String, Fail> {
+        let manifest = self.tree.join(layout::DOC_MANIFEST);
+        if !manifest.is_file() {
+            return Err(start_fail(
+                "в дереве нет doc/Cargo.toml — журнал не свернуть",
+            ));
+        }
+        let target = self.target.clone();
+        let mut build = self.cargo(&target);
+        build
+            .args(["check", "--manifest-path"])
+            .arg(&manifest)
+            .arg("--locked");
+        self.cargo_step(
+            "свёртка журнала: cargo check doc",
+            "journal-check",
+            &mut build,
+        )?;
+        let mut verdict = format!(
+            "GATE OK ({} из {JOURNAL_ONLY_TOTAL}; только журнал — дерево без журнала уже проверено",
+            self.passed
+        );
+        self.append_skipped(&mut verdict);
+        Ok(verdict)
+    }
+
+    fn append_skipped(&self, verdict: &mut String) {
         if !self.skipped.is_empty() {
             verdict.push_str("; не выполнялось: ");
             verdict.push_str(&self.skipped.join(", "));
         }
         verdict.push(')');
-        Ok(verdict)
     }
 
     /// Шаг 1: имена внешних проектов не встречаются в файлах дерева.
@@ -452,6 +514,84 @@ impl Gate {
         }
         self.passed += 1;
         Ok(())
+    }
+
+    /// Шаг 3: файлы событий из HEAD не изменены и не удалены, а каждое
+    /// приземление ссылается на существующий коммит, дерево которого без
+    /// журнала совпадает с деревом события. Законность переходов проверяет
+    /// сборка крейта документов.
+    fn journal(&mut self) -> Result<(), Fail> {
+        let dir = self.tree.join(layout::JOURNAL_DIR);
+        if !dir.is_dir() {
+            self.skipped.push("журнал");
+            return Ok(());
+        }
+        let mut problems = self.changed_event_files();
+        let (events, _) = slipway_journal::read_dir(&dir)
+            .map_err(|error| start_fail(format!("журнал не прочитан: {error}")))?;
+        for event in &events {
+            let Kind::Landed { commit, tree, .. } = &event.kind else {
+                continue;
+            };
+            let object = format!("{commit}^{{commit}}");
+            if !git::succeeds(&self.root, &["cat-file", "-e", &object]) {
+                problems.push(format!(
+                    "{}: коммита {commit} нет в репозитории",
+                    event.file
+                ));
+            } else if proof::content_hash(&self.root, commit).as_deref() != Some(tree.as_str()) {
+                problems.push(format!(
+                    "{}: дерево коммита {commit} без журнала расходится с деревом события",
+                    event.file
+                ));
+            }
+        }
+        if !problems.is_empty() {
+            for problem in &problems {
+                println!("  журнал: {problem}");
+            }
+            return Err(fail("журнал расходится с историей (решение 15)"));
+        }
+        self.passed += 1;
+        Ok(())
+    }
+
+    /// Файлы событий из HEAD, изменённые или удалённые в дереве. Без HEAD —
+    /// первый коммит — сравнивать не с чем.
+    fn changed_event_files(&self) -> Vec<String> {
+        let Some(listing) = git::read(
+            &self.root,
+            &["ls-tree", "-r", "-z", "HEAD", "--", layout::JOURNAL_DIR],
+        ) else {
+            return Vec::new();
+        };
+        let mut problems = Vec::new();
+        let mut present = Vec::new();
+        for entry in listing.split('\0') {
+            let Some((meta, path)) = entry.split_once('\t') else {
+                continue;
+            };
+            let Some(sha) = meta.split_whitespace().nth(2) else {
+                continue;
+            };
+            if !path.ends_with(".toml") {
+                continue;
+            }
+            let file = self.tree.join(path);
+            if file.is_file() {
+                present.push((sha.to_owned(), path.to_owned(), file));
+            } else {
+                problems.push(format!("{path}: файл события удалён"));
+            }
+        }
+        let files: Vec<PathBuf> = present.iter().map(|(_, _, file)| file.clone()).collect();
+        let hashes = proof::file_hashes(&self.root, &files);
+        for ((sha, path, _), hash) in present.iter().zip(hashes) {
+            if hash.as_deref() != Some(sha.as_str()) {
+                problems.push(format!("{path}: файл события изменён"));
+            }
+        }
+        problems
     }
 
     /// cargo из дерева с каталогом сборки `build`.

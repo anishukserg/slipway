@@ -64,6 +64,9 @@ dependencies = [
 [[package]]
 name = "slipway-cli"
 version = "0.1.0"
+dependencies = [
+ "slipway-journal",
+]
 
 [[package]]
 name = "slipway-core"

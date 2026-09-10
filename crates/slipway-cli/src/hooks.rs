@@ -1,4 +1,4 @@
-//! Хуки git по решениям 8, 9, 13 и 14.
+//! Хуки git по решениям 8, 9, 13, 14 и 15.
 //!
 //! ```text
 //! cargo slipway hook pre-commit
@@ -10,10 +10,10 @@
 //! Файлы хуков — однострочники в `.githooks/`, вызывающие эти команды; вся
 //! логика хуков — здесь.
 
-use crate::{gate, git, layout, message};
+use crate::{gate, git, layout, message, proof};
 use std::ffi::OsString;
 use std::fs;
-use std::io::{self, BufRead};
+use std::io::{self, BufRead, BufReader};
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::Stdio;
@@ -86,6 +86,10 @@ pub fn install(args: &[OsString]) -> u8 {
 /// pre-commit: калитка на дереве коммита, а не на рабочем дереве. При частичном
 /// коммите это разные деревья, и проверка рабочего подтвердила бы не то, что
 /// уходит в историю.
+///
+/// Доказательство (решение 15): после полной калитки для хэша дерева коммита
+/// без журнала сохраняется доказательство. Если оно уже есть, дерево без
+/// журнала не изменилось, и калитка проверяет только журнал.
 fn pre_commit() -> u8 {
     let Some(repo) = git::Repo::discover(Path::new(".")) else {
         eprintln!("pre-commit: не git-репозиторий");
@@ -97,7 +101,17 @@ fn pre_commit() -> u8 {
         eprintln!("pre-commit: {problem}");
         return 2;
     }
-    let code = run_gate(&repo, &tree);
+    let hash = proof::index_hash(&repo.root);
+    let proven = hash
+        .as_deref()
+        .and_then(|hash| proof::verdict(&repo.git_dir, hash));
+    if let (Some(hash), Some(verdict)) = (&hash, &proven) {
+        println!(
+            "pre-commit: дерево без журнала уже проверено ({}: {verdict}) — проверяется журнал",
+            hash.get(..12).unwrap_or(hash)
+        );
+    }
+    let (code, verdict) = run_gate(&repo, &tree, proven.is_some());
     if code != 0 {
         return code;
     }
@@ -107,6 +121,18 @@ fn pre_commit() -> u8 {
     if !git::succeeds(&repo.root, &["write-tree"]) {
         eprintln!("pre-commit: индекс коммита повреждён после калитки — коммит не создаётся");
         return 1;
+    }
+    if proven.is_none() {
+        match (hash, verdict) {
+            (Some(hash), Some(verdict)) => {
+                if let Err(error) = proof::record(&repo.git_dir, &hash, &verdict) {
+                    eprintln!("pre-commit: доказательство не записано: {error}");
+                }
+            }
+            _ => eprintln!(
+                "pre-commit: хэш дерева или вердикт не получены — доказательство не записано"
+            ),
+        }
     }
     0
 }
@@ -185,32 +211,49 @@ fn copy_if_changed(src: &Path, dst: &Path) -> io::Result<()> {
 
 /// Калитка из дерева коммита, если в нём есть сам инструмент: изменение правил
 /// проверяется изменёнными правилами. Иначе — калитка этого инструмента.
-fn run_gate(repo: &git::Repo, tree: &Path) -> u8 {
+/// Возвращает код и строку вердикта.
+fn run_gate(repo: &git::Repo, tree: &Path, journal_only: bool) -> (u8, Option<String>) {
+    let mut args = vec![OsString::from("--repo"), repo.root.clone().into_os_string()];
+    if journal_only {
+        args.push(OsString::from("--journal-only"));
+    }
+    args.push(tree.as_os_str().to_owned());
     if !tree.join(layout::TOOL_MANIFEST).is_file() {
-        let args = [
-            OsString::from("--repo"),
-            repo.root.clone().into_os_string(),
-            tree.as_os_str().to_owned(),
-        ];
-        return gate::run(&args);
+        let (code, verdict) = gate::run_with_verdict(&args);
+        return (code, Some(verdict));
     }
     let mut command = gate::cargo_command(tree, &repo.root.join(layout::GATE_TOOL_TARGET));
     command
         .args(["run", "--quiet", "--locked", "--manifest-path"])
         .arg(tree.join(layout::MANIFEST))
-        .args(["-p", layout::TOOL_PACKAGE, "--", "gate", "--repo"])
-        .arg(&repo.root)
-        .arg(tree);
-    match command.status() {
-        Ok(status) => status
-            .code()
-            .and_then(|code| u8::try_from(code).ok())
-            .unwrap_or(1),
+        .args(["-p", layout::TOOL_PACKAGE, "--", "gate"])
+        .args(&args)
+        .stdout(Stdio::piped());
+    let mut child = match command.spawn() {
+        Ok(child) => child,
         Err(error) => {
             eprintln!("pre-commit: cargo не запустился: {error}");
-            2
+            return (2, None);
+        }
+    };
+    // Вывод калитки передаётся дальше как есть; последняя строка GATE —
+    // вердикт для доказательства.
+    let mut verdict = None;
+    if let Some(out) = child.stdout.take() {
+        for line in BufReader::new(out).lines().map_while(Result::ok) {
+            println!("{line}");
+            if line.starts_with("GATE ") {
+                verdict = Some(line);
+            }
         }
     }
+    let code = child
+        .wait()
+        .ok()
+        .and_then(|status| status.code())
+        .and_then(|code| u8::try_from(code).ok())
+        .unwrap_or(1);
+    (code, verdict)
 }
 
 /// pre-push: в удалённый репозиторий не уходят ветки архива (решение 9),

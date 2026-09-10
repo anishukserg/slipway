@@ -9,6 +9,12 @@ pub const TAXONOMY: &str = "doc/taxonomy.rs";
 /// Каталог единиц работы: основание коммита обязано лежать здесь.
 pub const WORK_DIR: &str = "doc/work";
 
+/// Каталог журнала работы (решение 15).
+pub const JOURNAL_DIR: &str = "doc/journal";
+
+/// Манифест крейта документов: его сборка сворачивает журнал.
+pub const DOC_MANIFEST: &str = "doc/Cargo.toml";
+
 /// Решение с правилами коммитов — ссылка в сообщениях об отказе.
 pub const COMMIT_RULES: &str = "правила коммитов — решение 8, doc/adr/a0008.rs";
 
@@ -34,6 +40,10 @@ pub const HOOKS_DIR: &str = ".githooks";
 
 /// Каталог в каталоге git, куда pre-commit выгружает дерево коммита.
 pub const COMMIT_TREE_DIR: &str = "slipway-gate";
+
+/// Доказательства калитки в каталоге git: файл на хэш дерева без журнала
+/// (решение 15).
+pub const PROOFS_DIR: &str = "slipway-proofs";
 
 /// Манифест самого инструмента в дереве Slipway. Если он есть в дереве коммита,
 /// калитку собирает и запускает инструмент из этого дерева.

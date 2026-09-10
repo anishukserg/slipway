@@ -1,16 +1,18 @@
-//! `cargo slipway` — правила коммитов, калитка и хуки Slipway (решения 8 и 14).
+//! `cargo slipway` — правила коммитов, калитка, хуки и журнал Slipway
+//! (решения 8, 14 и 15).
 //!
 //! ```text
 //! cargo slipway commit -F <сообщение> [--log <файл>] [--timeout <сек>] -- <пути…>
 //! cargo slipway msg-check [--form-only] <сообщение>
-//! cargo slipway gate [--repo <каталог>] [<дерево>]
+//! cargo slipway gate [--repo <каталог>] [--journal-only] [<дерево>]
 //! cargo slipway hook pre-commit | commit-msg <сообщение> | pre-push <удалённый> <адрес>
 //! cargo slipway hooks install
+//! cargo slipway journal hash [<ревизия>]
 //! ```
 //!
 //! Инструмент опирается на соглашения, а не на настройку: пути собраны в
-//! модуле `layout`. Зависимостей нет: хук собирает инструмент, и сборка не
-//! тянет граф крейтов.
+//! модуле `layout`. Внешних зависимостей нет: хук собирает инструмент, и
+//! сборка не тянет граф крейтов.
 
 // Нестабильные возможности запрещены и в doctest: lints манифеста на них не
 // распространяются, а атаки выполняются под RUSTC_BOOTSTRAP (решение 12).
@@ -20,19 +22,22 @@ mod commit;
 mod gate;
 mod git;
 mod hooks;
+mod journal;
 mod layout;
 mod message;
+mod proof;
 
 use std::ffi::OsString;
 use std::process::ExitCode;
 
-const USAGE: &str = "cargo slipway — правила коммитов Slipway (решения 8 и 14)
+const USAGE: &str = "cargo slipway — правила коммитов и журнал Slipway (решения 8, 14 и 15)
 
   cargo slipway commit -F <сообщение> [--log <файл>] [--timeout <сек>] -- <пути…>
   cargo slipway msg-check [--form-only] <сообщение>
-  cargo slipway gate [--repo <каталог>] [<дерево>]
+  cargo slipway gate [--repo <каталог>] [--journal-only] [<дерево>]
   cargo slipway hook pre-commit | commit-msg <сообщение> | pre-push <удалённый> <адрес>
-  cargo slipway hooks install";
+  cargo slipway hooks install
+  cargo slipway journal hash [<ревизия>]";
 
 fn main() -> ExitCode {
     let mut args: Vec<OsString> = std::env::args_os().skip(1).collect();
@@ -51,6 +56,7 @@ fn main() -> ExitCode {
         "gate" => gate::run(rest),
         "hook" => hooks::run(rest),
         "hooks" => hooks::install(rest),
+        "journal" => journal::run(rest),
         "help" | "--help" | "-h" => {
             println!("{USAGE}");
             0
