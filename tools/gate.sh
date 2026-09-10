@@ -20,7 +20,9 @@
 #      с верным — проходит (решение 12);
 #   8. атаки — doctest со сверкой кодов под RUSTC_BOOTSTRAP=1, в отдельном
 #      каталоге сборки, с полом по числу прошедших;
-#   9. документация без предупреждений и битых внутренних ссылок.
+#   9. документация без предупреждений и битых внутренних ссылок;
+#  10. сборка всех целей на минимальной версии из rust-version;
+#  11. проба сверки кодов и атаки на минимальной версии, с тем же полом.
 #
 # Отсутствующий инструмент — отказ шага, а не пропуск. Шаг без предмета
 # проверки называется невыполненным, а не пройденным.
@@ -29,6 +31,8 @@
 # Последняя строка: `GATE OK (<n> из <m>; …)` или `GATE FAIL: <шаг>`.
 set -uo pipefail
 if locale -a 2>/dev/null | grep -qiE '^c\.utf-?8$'; then export LC_ALL=C.UTF-8; fi
+# Отсутствующий тулчейн — отказ шага, а не скрытая загрузка внутри хука.
+export RUSTUP_AUTO_INSTALL=0
 
 # Пол только растёт: добавил атаку — подними; понижение — изменение правила.
 DOCTEST_FLOOR=36
@@ -40,7 +44,7 @@ git_dir=$(git rev-parse --absolute-git-dir)
 tree=$(cd "${1:-$repo}" 2>/dev/null && pwd) || fail "нет каталога ${1:-}" 2
 target="$repo/target/gate"
 names="$git_dir/info/slipway-external-names"
-total=9
+total=11
 passed=0
 skipped=()
 doctests=0
@@ -60,6 +64,11 @@ cargo_step() {
     fail "$label (код $rc)"
   fi
   passed=$((passed + 1))
+}
+
+# count_doctests <журнал>: число прошедших doctest в выводе cargo test.
+count_doctests() {
+  grep -cE '^test .+ - .+\(line [0-9]+\)( - compile fail)? \.\.\. ok$' "$1"
 }
 
 # 1. Внешние имена.
@@ -115,7 +124,7 @@ else
   skipped+=("ссылки в markdown")
 fi
 
-# Шаги 4–9 запускают cargo. Без манифеста в самом дереве cargo пошёл бы
+# Шаги 4–11 запускают cargo. Без манифеста в самом дереве cargo пошёл бы
 # искать рабочее пространство в родительских каталогах и собрал бы чужой
 # проект, поэтому манифест обязателен и передаётся явно.
 [[ -f $tree/Cargo.toml ]] || fail "в дереве нет Cargo.toml — сборка не запускается" 2
@@ -135,8 +144,7 @@ cargo_step "cargo test --all-targets" test "$target" \
 # 7. Сверка кодов ошибок работает. rustdoc сверяет коды compile_fail только в
 # nightly-режиме; на stable его включает RUSTC_BOOTSTRAP=1 (решение 12). Без
 # сверки атака прошла бы на любой ошибке компиляции, поэтому механизм
-# проверяется до атак: неверный код обязан упасть, верный — пройти. Проба
-# собирается тем же тулчейном — cargo запускается из дерева.
+# проверяется до атак: неверный код обязан упасть, верный — пройти.
 probe="$target/probe"
 mkdir -p "$probe/src" || fail "не создать $probe" 2
 # Файл перезаписывается только при изменении: иначе проба пересобиралась бы.
@@ -163,21 +171,29 @@ write_if_changed "$probe/src/lib.rs" '//! Проба сверки кодов о�
 //! ```compile_fail,E0308
 //! let _: u32 = "не число";
 //! ```'
-(cd "$tree" && CARGO_TARGET_DIR="$target/probe-build" RUSTC_BOOTSTRAP=1 \
-  cargo test --manifest-path "$probe/Cargo.toml" --doc) > "$target/probe.log" 2>&1
-if ! grep -q 'Some expected error codes were not found' "$target/probe.log" \
-  || ! grep -qE '^test result: FAILED\. 1 passed; 1 failed;' "$target/probe.log"; then
-  tail -n 12 "$target/probe.log"
-  echo "полный вывод: $target/probe.log"
-  fail "сверка кодов ошибок в атаках не работает — атаки прошли бы вакуумно (решение 12)"
-fi
+# probe_codes <журнал> <каталог сборки> [+тулчейн]: отказ, если сверка не
+# работает. Без явного тулчейна проба собирается тулчейном дерева — cargo
+# запускается из него.
+probe_codes() {
+  local log="$target/$1.log" build=$2
+  shift 2
+  (cd "$tree" && CARGO_TARGET_DIR="$build" RUSTC_BOOTSTRAP=1 \
+    cargo "$@" test --manifest-path "$probe/Cargo.toml" --doc) > "$log" 2>&1
+  if ! grep -q 'Some expected error codes were not found' "$log" \
+    || ! grep -qE '^test result: FAILED\. 1 passed; 1 failed;' "$log"; then
+    tail -n 12 "$log"
+    echo "полный вывод: $log"
+    fail "сверка кодов ошибок в атаках не работает${1:+ на $1} — атаки прошли бы вакуумно (решение 12)"
+  fi
+}
+probe_codes probe "$target/probe-build"
 passed=$((passed + 1))
 
 # 8. Атаки. Отдельный каталог сборки: RUSTC_BOOTSTRAP меняет отпечаток сборки
 # зависимостей и сбрасывал бы кэш шагов 5, 6 и 9.
 cargo_step "атаки: cargo test --doc" attacks "$target-attacks" \
   env RUSTC_BOOTSTRAP=1 cargo test --manifest-path "$manifest" --workspace --doc --no-fail-fast --locked
-doctests=$(grep -cE '^test .+ - .+\(line [0-9]+\)( - compile fail)? \.\.\. ok$' "$target/attacks.log")
+doctests=$(count_doctests "$target/attacks.log")
 if (( doctests < DOCTEST_FLOOR )); then
   fail "прошло doctest $doctests при поле $DOCTEST_FLOOR — атаки не исполнялись или удалены"
 fi
@@ -186,7 +202,27 @@ fi
 cargo_step "cargo doc -D warnings" doc "$target" \
   env RUSTDOCFLAGS="-D warnings" cargo doc --manifest-path "$manifest" --workspace --no-deps --locked
 
-verdict="GATE OK ($passed из $total; doctest $doctests"
+# 10–11. Минимальная версия из rust-version рабочего пространства (решение 12):
+# обещанная потребителям невыразимость проверяется на обещанном им компиляторе.
+# Отсутствующий тулчейн этой версии — отказ шага.
+msrv=$(sed -nE 's/^rust-version = "([0-9]+\.[0-9]+(\.[0-9]+)?)"$/\1/p' "$manifest" | head -n 1)
+[[ -n $msrv ]] || fail "в Cargo.toml дерева нет rust-version — минимальная версия не проверяется" 2
+[[ $msrv == *.*.* ]] || msrv="$msrv.0"
+
+# 10. Сборка всех целей на минимальной версии.
+cargo_step "cargo +$msrv check --all-targets" msrv-check "$target-msrv" \
+  cargo "+$msrv" check --manifest-path "$manifest" --workspace --all-targets --locked
+
+# 11. Проба сверки кодов и атаки на минимальной версии.
+probe_codes msrv-probe "$target-msrv-probe" "+$msrv"
+cargo_step "атаки на $msrv: cargo test --doc" msrv-attacks "$target-msrv-attacks" \
+  env RUSTC_BOOTSTRAP=1 cargo "+$msrv" test --manifest-path "$manifest" --workspace --doc --no-fail-fast --locked
+msrv_doctests=$(count_doctests "$target/msrv-attacks.log")
+if (( msrv_doctests < DOCTEST_FLOOR )); then
+  fail "на $msrv прошло doctest $msrv_doctests при поле $DOCTEST_FLOOR — атаки не исполнялись или удалены"
+fi
+
+verdict="GATE OK ($passed из $total; doctest $doctests, на $msrv — $msrv_doctests"
 if (( ${#skipped[@]} )); then
   verdict+="; не выполнялось: ${skipped[*]}"
 fi
