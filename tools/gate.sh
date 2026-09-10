@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Калитка коммита по решению 8: один набор шагов и машинный вердикт.
+# Калитка коммита по решениям 8 и 12: один набор шагов и машинный вердикт.
 #
 #   tools/gate.sh [<каталог дерева>]
 #
 # Хук pre-commit передаёт выгруженное дерево коммита; без аргумента
-# проверяется рабочее дерево. Сборка идёт в target/gate корня репозитория,
+# проверяется рабочее дерево. Сборка идёт в target/gate* корня репозитория,
 # чтобы кэш переживал выгрузки; cargo запускается из самого дерева, чтобы
 # тулчейн брался из его rust-toolchain.toml.
 #
@@ -15,10 +15,12 @@
 #   3. относительные ссылки в markdown ведут в существующие файлы;
 #   4. форматирование — `cargo fmt --check`;
 #   5. clippy без предупреждений на всех целях;
-#   6. cargo test — сборка всех целей с константными проверками реестров,
-#      тесты, doctest-атаки с контролями;
-#   7. пол числа прошедших doctest — атаки не могли пройти вакуумно;
-#   8. документация без предупреждений и битых внутренних ссылок.
+#   6. сборка всех целей с константными проверками реестров и тесты;
+#   7. сверка кодов ошибок работает: пробная атака с неверным кодом падает,
+#      с верным — проходит (решение 12);
+#   8. атаки — doctest со сверкой кодов под RUSTC_BOOTSTRAP=1, в отдельном
+#      каталоге сборки, с полом по числу прошедших;
+#   9. документация без предупреждений и битых внутренних ссылок.
 #
 # Отсутствующий инструмент — отказ шага, а не пропуск. Шаг без предмета
 # проверки называется невыполненным, а не пройденным.
@@ -38,21 +40,21 @@ git_dir=$(git rev-parse --absolute-git-dir)
 tree=$(cd "${1:-$repo}" 2>/dev/null && pwd) || fail "нет каталога ${1:-}" 2
 target="$repo/target/gate"
 names="$git_dir/info/slipway-external-names"
-total=8
+total=9
 passed=0
 skipped=()
 doctests=0
 mkdir -p "$target" || fail "не создать $target" 2
 
-# cargo_step <название> <журнал> <команда…>: запуск из дерева; при отказе —
-# строки ошибок и хвост журнала, полный вывод остаётся в файле.
+# cargo_step <название> <журнал> <каталог сборки> <команда…>: запуск из дерева;
+# при отказе — строки ошибок и хвост журнала, полный вывод остаётся в файле.
 cargo_step() {
-  local label=$1 log="$target/$2.log"
-  shift 2
-  (cd "$tree" && CARGO_TARGET_DIR="$target" "$@") > "$log" 2>&1
+  local label=$1 log="$target/$2.log" build=$3
+  shift 3
+  (cd "$tree" && CARGO_TARGET_DIR="$build" "$@") > "$log" 2>&1
   local rc=$?
   if (( rc != 0 )); then
-    grep -E '^(error(\[E[0-9]+\])?:|warning:|test .* FAILED$|---- |Diff in )' "$log" | head -n 40
+    grep -E '^(error(\[E[0-9]+\])?:|warning:|test .* FAILED$|---- |Diff in |Some expected error codes)' "$log" | head -n 40
     tail -n 12 "$log"
     echo "полный вывод: $log"
     fail "$label (код $rc)"
@@ -113,32 +115,75 @@ else
   skipped+=("ссылки в markdown")
 fi
 
-# Шаги 4–8 запускают cargo. Без манифеста в самом дереве cargo пошёл бы
+# Шаги 4–9 запускают cargo. Без манифеста в самом дереве cargo пошёл бы
 # искать рабочее пространство в родительских каталогах и собрал бы чужой
 # проект, поэтому манифест обязателен и передаётся явно.
 [[ -f $tree/Cargo.toml ]] || fail "в дереве нет Cargo.toml — сборка не запускается" 2
 manifest="$tree/Cargo.toml"
 
 # 4. Форматирование.
-cargo_step "cargo fmt --check" fmt cargo fmt --manifest-path "$manifest" --all --check
+cargo_step "cargo fmt --check" fmt "$target" cargo fmt --manifest-path "$manifest" --all --check
 
 # 5. clippy.
-cargo_step "cargo clippy -D warnings" clippy \
+cargo_step "cargo clippy -D warnings" clippy "$target" \
   cargo clippy --manifest-path "$manifest" --workspace --all-targets --locked -- -D warnings
 
-# 6. Сборка и тесты.
-cargo_step "cargo test --workspace" test \
-  cargo test --manifest-path "$manifest" --workspace --no-fail-fast --locked
+# 6. Сборка всех целей и тесты. Doctest-атаки выполняются шагом 8.
+cargo_step "cargo test --all-targets" test "$target" \
+  cargo test --manifest-path "$manifest" --workspace --all-targets --no-fail-fast --locked
 
-# 7. Пол числа прошедших doctest.
-doctests=$(grep -cE '^test .+ - .+\(line [0-9]+\)( - compile fail)? \.\.\. ok$' "$target/test.log")
-if (( doctests < DOCTEST_FLOOR )); then
-  fail "прошло doctest $doctests при поле $DOCTEST_FLOOR — атаки не исполнялись или удалены"
+# 7. Сверка кодов ошибок работает. rustdoc сверяет коды compile_fail только в
+# nightly-режиме; на stable его включает RUSTC_BOOTSTRAP=1 (решение 12). Без
+# сверки атака прошла бы на любой ошибке компиляции, поэтому механизм
+# проверяется до атак: неверный код обязан упасть, верный — пройти. Проба
+# собирается тем же тулчейном — cargo запускается из дерева.
+probe="$target/probe"
+mkdir -p "$probe/src" || fail "не создать $probe" 2
+# Файл перезаписывается только при изменении: иначе проба пересобиралась бы.
+write_if_changed() {
+  [[ -f $1 && $(< "$1") == "$2" ]] || printf '%s\n' "$2" > "$1"
+}
+write_if_changed "$probe/Cargo.toml" '[package]
+name = "slipway-gate-probe"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[workspace]'
+write_if_changed "$probe/src/lib.rs" '//! Проба сверки кодов ошибок в атаках (решение 12).
+//!
+//! Неверный код: тело даёт E0308, объявлен E0080 — обязана упасть.
+//!
+//! ```compile_fail,E0080
+//! let _: u32 = "не число";
+//! ```
+//!
+//! Верный код: то же тело — обязана пройти.
+//!
+//! ```compile_fail,E0308
+//! let _: u32 = "не число";
+//! ```'
+(cd "$tree" && CARGO_TARGET_DIR="$target/probe-build" RUSTC_BOOTSTRAP=1 \
+  cargo test --manifest-path "$probe/Cargo.toml" --doc) > "$target/probe.log" 2>&1
+if ! grep -q 'Some expected error codes were not found' "$target/probe.log" \
+  || ! grep -qE '^test result: FAILED\. 1 passed; 1 failed;' "$target/probe.log"; then
+  tail -n 12 "$target/probe.log"
+  echo "полный вывод: $target/probe.log"
+  fail "сверка кодов ошибок в атаках не работает — атаки прошли бы вакуумно (решение 12)"
 fi
 passed=$((passed + 1))
 
-# 8. Документация.
-cargo_step "cargo doc -D warnings" doc \
+# 8. Атаки. Отдельный каталог сборки: RUSTC_BOOTSTRAP меняет отпечаток сборки
+# зависимостей и сбрасывал бы кэш шагов 5, 6 и 9.
+cargo_step "атаки: cargo test --doc" attacks "$target-attacks" \
+  env RUSTC_BOOTSTRAP=1 cargo test --manifest-path "$manifest" --workspace --doc --no-fail-fast --locked
+doctests=$(grep -cE '^test .+ - .+\(line [0-9]+\)( - compile fail)? \.\.\. ok$' "$target/attacks.log")
+if (( doctests < DOCTEST_FLOOR )); then
+  fail "прошло doctest $doctests при поле $DOCTEST_FLOOR — атаки не исполнялись или удалены"
+fi
+
+# 9. Документация.
+cargo_step "cargo doc -D warnings" doc "$target" \
   env RUSTDOCFLAGS="-D warnings" cargo doc --manifest-path "$manifest" --workspace --no-deps --locked
 
 verdict="GATE OK ($passed из $total; doctest $doctests"

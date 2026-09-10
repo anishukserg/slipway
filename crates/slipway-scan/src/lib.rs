@@ -12,6 +12,10 @@
 //! код сверяет одно с другим константными утверждениями, и расхождение
 //! становится ошибкой компиляции, а не тихо неверным модулем констант.
 
+// Нестабильные возможности запрещены и в doctest: lints манифеста на них не
+// распространяются, а атаки выполняются под RUSTC_BOOTSTRAP (решение 12).
+#![doc(test(attr(forbid(unstable_features))))]
+
 pub mod anchors;
 pub mod plan;
 pub use anchors::{scan_anchors, AnchorMode, ScannedAnchor};

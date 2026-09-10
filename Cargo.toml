@@ -11,6 +11,10 @@ license = "MIT OR Apache-2.0"
 [workspace.lints.rust]
 # Небезопасный код в крейтах методологии невыразим, а не «проверяется ревью».
 unsafe_code = "forbid"
+# Нестабильные возможности невыразимы и под RUSTC_BOOTSTRAP шага атак
+# (решение 12). На doctest lints манифеста не распространяются — там тот же
+# запрет ставит атрибут doc(test(attr(...))) в корне каждого крейта.
+unstable_features = "forbid"
 
 [workspace.dependencies]
 slipway-core = { path = "crates/slipway-core" }

@@ -16,6 +16,10 @@
 //! Разбор написан на `proc_macro` без `syn`: атрибут стоит в продуктовом
 //! коде, и его сборка не должна тянуть парсер.
 
+// Нестабильные возможности запрещены и в doctest: lints манифеста на них не
+// распространяются, а атаки выполняются под RUSTC_BOOTSTRAP (решение 12).
+#![doc(test(attr(forbid(unstable_features))))]
+
 use proc_macro::{Delimiter, Group, Ident, Literal, Punct, Spacing, Span, TokenStream, TokenTree};
 use slipway_core::anchor_rules::{check_anchor_id, check_anchor_mode};
 

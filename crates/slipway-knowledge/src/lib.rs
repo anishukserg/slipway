@@ -1,5 +1,9 @@
 //! Слой знания: что решено и почему. Спецификация — RFC-0001 в документах Slipway, `doc/rfc/r0001.rs`.
 
+// Нестабильные возможности запрещены и в doctest: lints манифеста на них не
+// распространяются, а атаки выполняются под RUSTC_BOOTSTRAP (решение 12).
+#![doc(test(attr(forbid(unstable_features))))]
+
 pub mod attacks;
 pub mod schema;
 pub use schema::{ArchitectureDecision, Breaking, DocStatus, DomainSpecification};

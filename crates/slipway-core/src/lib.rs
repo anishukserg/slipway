@@ -4,6 +4,10 @@
 //! нужно обоим слоям. Зависимостей нет:
 //! крейт подключают и атрибут разметки, и скан, работающий в `build.rs`.
 
+// Нестабильные возможности запрещены и в doctest: lints манифеста на них не
+// распространяются, а атаки выполняются под RUSTC_BOOTSTRAP (решение 12).
+#![doc(test(attr(forbid(unstable_features))))]
+
 pub mod anchor_rules;
 pub mod nonempty;
 pub mod radius;
