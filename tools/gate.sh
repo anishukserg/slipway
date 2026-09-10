@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Калитка коммита по решениям 8 и 12: один набор шагов и машинный вердикт.
+# Калитка коммита по решениям 8, 12 и 13: один набор шагов и машинный вердикт.
 #
 #   tools/gate.sh [<каталог дерева>]
 #
@@ -22,7 +22,9 @@
 #      каталоге сборки, с полом по числу прошедших;
 #   9. документация без предупреждений и битых внутренних ссылок;
 #  10. сборка всех целей на минимальной версии из rust-version;
-#  11. проба сверки кодов и атаки на минимальной версии, с тем же полом.
+#  11. проба сверки кодов и атаки на минимальной версии, с тем же полом;
+#  12. зависимости — политика deny.toml по сохранённой базе уязвимостей, без
+#      сети (решение 13).
 #
 # Отсутствующий инструмент — отказ шага, а не пропуск. Шаг без предмета
 # проверки называется невыполненным, а не пройденным.
@@ -44,7 +46,7 @@ git_dir=$(git rev-parse --absolute-git-dir)
 tree=$(cd "${1:-$repo}" 2>/dev/null && pwd) || fail "нет каталога ${1:-}" 2
 target="$repo/target/gate"
 names="$git_dir/info/slipway-external-names"
-total=11
+total=12
 passed=0
 skipped=()
 doctests=0
@@ -58,7 +60,7 @@ cargo_step() {
   (cd "$tree" && CARGO_TARGET_DIR="$build" "$@") > "$log" 2>&1
   local rc=$?
   if (( rc != 0 )); then
-    grep -E '^(error(\[E[0-9]+\])?:|warning:|test .* FAILED$|---- |Diff in |Some expected error codes)' "$log" | head -n 40
+    grep -E '^((error|warning|bug)(\[[A-Za-z0-9_-]+\])?:|test .* FAILED$|---- |Diff in |Some expected error codes)' "$log" | head -n 40
     tail -n 12 "$log"
     echo "полный вывод: $log"
     fail "$label (код $rc)"
@@ -124,7 +126,7 @@ else
   skipped+=("ссылки в markdown")
 fi
 
-# Шаги 4–11 запускают cargo. Без манифеста в самом дереве cargo пошёл бы
+# Шаги 4–12 запускают cargo. Без манифеста в самом дереве cargo пошёл бы
 # искать рабочее пространство в родительских каталогах и собрал бы чужой
 # проект, поэтому манифест обязателен и передаётся явно.
 [[ -f $tree/Cargo.toml ]] || fail "в дереве нет Cargo.toml — сборка не запускается" 2
@@ -221,6 +223,14 @@ msrv_doctests=$(count_doctests "$target/msrv-attacks.log")
 if (( msrv_doctests < DOCTEST_FLOOR )); then
   fail "на $msrv прошло doctest $msrv_doctests при поле $DOCTEST_FLOOR — атаки не исполнялись или удалены"
 fi
+
+# 12. Зависимости (решение 13): политика deny.toml по сохранённой базе
+# уязвимостей, без сети — коммит не зависит от сети. Базу обновляет pre-push;
+# без базы шаг отказывает, и она ставится командой `cargo deny fetch`.
+[[ -f $tree/deny.toml ]] || fail "в дереве нет deny.toml — политика зависимостей не задана (решение 13)"
+command -v cargo-deny > /dev/null || fail "cargo-deny не установлен — cargo install cargo-deny --locked" 2
+cargo_step "cargo deny check" deny "$target" \
+  cargo deny --manifest-path "$manifest" --config "$tree/deny.toml" --frozen check
 
 verdict="GATE OK ($passed из $total; doctest $doctests, на $msrv — $msrv_doctests"
 if (( ${#skipped[@]} )); then

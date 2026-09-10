@@ -17,10 +17,12 @@ unsafe_code = "forbid"
 unstable_features = "forbid"
 
 [workspace.dependencies]
-slipway-core = { path = "crates/slipway-core" }
-slipway-knowledge = { path = "crates/slipway-knowledge" }
-slipway-work = { path = "crates/slipway-work" }
-slipway-scan = { path = "crates/slipway-scan" }
+# Версия у path-зависимостей обязательна публикуемым крейтам (решение 13).
+slipway-core = { path = "crates/slipway-core", version = "0.1.0" }
+slipway-knowledge = { path = "crates/slipway-knowledge", version = "0.1.0" }
+slipway-work = { path = "crates/slipway-work", version = "0.1.0" }
+slipway-scan = { path = "crates/slipway-scan", version = "0.1.0" }
+slipway-derive = { path = "crates/slipway-derive", version = "0.1.0" }
 syn = { version = "2", features = ["full", "extra-traits", "visit"] }
 proc-macro2 = { version = "1", features = ["span-locations"] }
 chrono = { version = "0.4.32", default-features = false, features = ["std"] }

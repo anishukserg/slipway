@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
-# pre-push по решению 8: в удалённый репозиторий не уходят ветки архива и
-# история, в дереве или сообщениях которой есть имя из локального списка
-# внешних проектов (решение 9).
+# pre-push по решениям 8, 9 и 13: в удалённый репозиторий не уходят ветки
+# архива; история, в дереве или сообщениях которой есть имя из локального
+# списка внешних проектов; вершина, зависимости которой не проходят политику
+# deny.toml по свежей базе уязвимостей.
 #
 # git передаёт на stdin строки
 # `<локальная ссылка> <локальный sha> <удалённая ссылка> <удалённый sha>`.
 set -uo pipefail
 if locale -a 2>/dev/null | grep -qiE '^c\.utf-?8$'; then export LC_ALL=C.UTF-8; fi
+# Отсутствующий тулчейн — отказ, а не скрытая загрузка внутри хука.
+export RUSTUP_AUTO_INSTALL=0
 
 git_dir=$(git rev-parse --absolute-git-dir) || exit 2
 names="$git_dir/info/slipway-external-names"
@@ -20,6 +23,36 @@ if [[ ! -s $patterns ]]; then
   echo "pre-push: список внешних имён $names пуст или не задан — история на внешние имена не проверялась" >&2
 fi
 
+# check_dependencies <sha>: политика deny.toml со свежей базой уязвимостей на
+# выгруженном дереве вершины (решение 13) — проверяется то, что публикуется, а
+# не рабочее дерево.
+check_dependencies() {
+  local sha=$1 short tree="$git_dir/slipway-push-tree" log="$git_dir/slipway-push-deny.log"
+  short=$(git rev-parse --short "$sha")
+  if ! git cat-file -e "$sha:Cargo.toml" 2> /dev/null; then
+    echo "pre-push: в $short нет Cargo.toml — зависимости не проверялись" >&2
+    return 0
+  fi
+  if ! git cat-file -e "$sha:deny.toml" 2> /dev/null; then
+    echo "pre-push: в $short нет deny.toml — политика зависимостей не задана (решение 13)" >&2
+    return 1
+  fi
+  if ! command -v cargo-deny > /dev/null; then
+    echo "pre-push: cargo-deny не установлен — cargo install cargo-deny --locked" >&2
+    return 1
+  fi
+  if ! { rm -rf "$tree" && mkdir -p "$tree" && git archive "$sha" | tar -x -C "$tree"; }; then
+    echo "pre-push: не выгружено дерево $short" >&2
+    return 1
+  fi
+  if ! (cd "$tree" && cargo deny --manifest-path Cargo.toml --config deny.toml --locked check) > "$log" 2>&1; then
+    grep -E '^(error|bug)(\[[A-Za-z0-9_-]+\])?:' "$log" | head -n 20 >&2
+    tail -n 2 "$log" >&2
+    echo "pre-push: зависимости $short не прошли cargo-deny, полный вывод: $log" >&2
+    return 1
+  fi
+}
+
 while read -r local_ref local_sha remote_ref remote_sha; do
   [[ -n ${local_ref:-} && $local_sha != "$zero" ]] || continue
   if [[ $local_ref == refs/heads/archive/* || $remote_ref == refs/heads/archive/* ]]; then
@@ -27,6 +60,7 @@ while read -r local_ref local_sha remote_ref remote_sha; do
     refused=1
     continue
   fi
+  check_dependencies "$local_sha" || refused=1
   [[ -s $patterns ]] || continue
   if [[ $remote_sha == "$zero" ]]; then
     range=$local_sha

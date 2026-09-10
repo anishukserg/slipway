@@ -1,0 +1,20 @@
+# Политика зависимостей Slipway (решение 13). Калитка коммита проверяет её по
+# сохранённой базе уязвимостей без сети, pre-push — по свежей базе.
+
+[advisories]
+# Отозванная версия — отказ, как и уязвимая.
+yanked = "deny"
+
+[licenses]
+# Разрешённые лицензии перечислены явно; новая — изменение политики.
+allow = ["MIT", "Apache-2.0", "Unicode-3.0"]
+
+[bans]
+multiple-versions = "deny"
+wildcards = "deny"
+# Path-зависимость без версии допустима только непубликуемым крейтам.
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
