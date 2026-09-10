@@ -4,6 +4,8 @@
 //! cargo slipway commit -F <сообщение> [--log <файл>] [--timeout <сек>] -- <пути…>
 //! cargo slipway msg-check [--form-only] <сообщение>
 //! cargo slipway gate [--repo <каталог>] [<дерево>]
+//! cargo slipway hook pre-commit | commit-msg <сообщение> | pre-push <удалённый> <адрес>
+//! cargo slipway hooks install
 //! ```
 //!
 //! Инструмент опирается на соглашения, а не на настройку: пути собраны в
@@ -17,6 +19,7 @@
 mod commit;
 mod gate;
 mod git;
+mod hooks;
 mod layout;
 mod message;
 
@@ -27,7 +30,9 @@ const USAGE: &str = "cargo slipway — правила коммитов Slipway (
 
   cargo slipway commit -F <сообщение> [--log <файл>] [--timeout <сек>] -- <пути…>
   cargo slipway msg-check [--form-only] <сообщение>
-  cargo slipway gate [--repo <каталог>] [<дерево>]";
+  cargo slipway gate [--repo <каталог>] [<дерево>]
+  cargo slipway hook pre-commit | commit-msg <сообщение> | pre-push <удалённый> <адрес>
+  cargo slipway hooks install";
 
 fn main() -> ExitCode {
     let mut args: Vec<OsString> = std::env::args_os().skip(1).collect();
@@ -44,6 +49,8 @@ fn main() -> ExitCode {
         "commit" => commit::run(rest),
         "msg-check" => message::run(rest),
         "gate" => gate::run(rest),
+        "hook" => hooks::run(rest),
+        "hooks" => hooks::install(rest),
         "help" | "--help" | "-h" => {
             println!("{USAGE}");
             0

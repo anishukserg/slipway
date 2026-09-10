@@ -23,7 +23,7 @@ fn planned_repo(name: &str) -> TempRepo {
     repo.write("unrelated.txt", "unrelated\n");
     repo.executable(
         "hooks/commit-msg",
-        &format!("#!/bin/sh\nexec '{}' msg-check \"$1\"\n", common::BIN),
+        &format!("#!/bin/sh\nexec '{}' hook commit-msg \"$1\"\n", common::BIN),
     );
     repo.git(&["config", "core.hooksPath", "hooks"]);
     repo.git(&["add", "-A"]);

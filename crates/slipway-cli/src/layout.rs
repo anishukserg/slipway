@@ -28,3 +28,28 @@ pub const EXTERNAL_NAMES: &str = "slipway-external-names";
 /// Каталог сборки калитки от корня репозитория; остальные каталоги сборки —
 /// рядом с ним, `target/gate-<шаг>`.
 pub const GATE_TARGET: &str = "target/gate";
+
+/// Каталог хуков в репозитории; git направляется в него через core.hooksPath.
+pub const HOOKS_DIR: &str = ".githooks";
+
+/// Каталог в каталоге git, куда pre-commit выгружает дерево коммита.
+pub const COMMIT_TREE_DIR: &str = "slipway-gate";
+
+/// Манифест самого инструмента в дереве Slipway. Если он есть в дереве коммита,
+/// калитку собирает и запускает инструмент из этого дерева.
+pub const TOOL_MANIFEST: &str = "crates/slipway-cli/Cargo.toml";
+
+/// Пакет инструмента.
+pub const TOOL_PACKAGE: &str = "slipway-cli";
+
+/// Каталог сборки инструмента из дерева коммита.
+pub const GATE_TOOL_TARGET: &str = "target/gate-tool";
+
+/// Дерево публикуемой вершины для pre-push, в каталоге git.
+pub const PUSH_TREE: &str = "slipway-push-tree";
+
+/// Временный индекс для выгрузки публикуемой вершины, в каталоге git.
+pub const PUSH_INDEX: &str = "slipway-push-index";
+
+/// Журнал cargo-deny в pre-push, в каталоге git.
+pub const PUSH_DENY_LOG: &str = "slipway-push-deny.log";

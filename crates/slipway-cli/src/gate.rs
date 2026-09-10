@@ -96,6 +96,58 @@ pub fn run(args: &[OsString]) -> u8 {
     }
 }
 
+/// cargo в каталоге `dir` с каталогом сборки `build`. Переменные GIT_* хука
+/// снимаются. RUSTUP_TOOLCHAIN тоже: rustup передаёт её всем дочерним
+/// процессам `cargo run` хука, и она перекрыла бы `rust-toolchain.toml` дерева —
+/// коммит, меняющий тулчейн, проверялся бы старым. Отсутствующий тулчейн —
+/// отказ, а не загрузка внутри хука.
+pub fn cargo_command(dir: &Path, build: &Path) -> Command {
+    let mut command = Command::new("cargo");
+    command
+        .current_dir(dir)
+        .env("CARGO_TARGET_DIR", build)
+        .env("RUSTUP_AUTO_INSTALL", "0")
+        .env_remove("RUSTUP_TOOLCHAIN")
+        .env_remove("RUSTUP_TOOLCHAIN_SOURCE");
+    for (key, _) in std::env::vars_os() {
+        if key.to_string_lossy().starts_with("GIT_") {
+            command.env_remove(key);
+        }
+    }
+    command
+}
+
+/// Имена внешних проектов из локального списка: без пустых строк и
+/// комментариев, в том виде, в каком записаны. Нет списка — пустой список.
+pub fn read_external_names(list: &Path) -> Vec<String> {
+    fs::read_to_string(list)
+        .map(|text| {
+            text.lines()
+                .map(str::trim)
+                .filter(|line| !line.is_empty() && !line.starts_with('#'))
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Установлена ли программа: она запускается и отвечает на `--version`.
+pub fn installed(program: &str) -> bool {
+    Command::new(program)
+        .arg("--version")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success())
+}
+
+/// Содержимое файла как текст; нечитаемый файл — пустая строка.
+pub fn read_lossy(path: &Path) -> String {
+    fs::read(path)
+        .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+        .unwrap_or_default()
+}
+
 /// Отказ калитки: шаг и код возврата.
 struct Fail {
     step: String,
@@ -331,15 +383,10 @@ impl Gate {
     /// Шаг 1: имена внешних проектов не встречаются в файлах дерева.
     fn external_names(&mut self) -> Result<(), Fail> {
         let list = self.git_dir.join("info").join(layout::EXTERNAL_NAMES);
-        let patterns: Vec<String> = fs::read_to_string(&list)
-            .map(|text| {
-                text.lines()
-                    .map(str::trim)
-                    .filter(|line| !line.is_empty() && !line.starts_with('#'))
-                    .map(str::to_lowercase)
-                    .collect()
-            })
-            .unwrap_or_default();
+        let patterns: Vec<String> = read_external_names(&list)
+            .iter()
+            .map(|name| name.to_lowercase())
+            .collect();
         if patterns.is_empty() {
             println!(
                 "внешние имена: список {} пуст или не задан — шаг не выполнялся",
@@ -407,25 +454,9 @@ impl Gate {
         Ok(())
     }
 
-    /// cargo из дерева с каталогом сборки `build`. Переменные GIT_* хука
-    /// снимаются. RUSTUP_TOOLCHAIN тоже: rustup передаёт её всем дочерним
-    /// процессам `cargo run` хука, и она перекрыла бы `rust-toolchain.toml`
-    /// дерева — коммит, меняющий тулчейн, проверялся бы старым. Отсутствующий
-    /// тулчейн — отказ, а не загрузка внутри хука.
+    /// cargo из дерева с каталогом сборки `build`.
     fn cargo(&self, build: &Path) -> Command {
-        let mut command = Command::new("cargo");
-        command
-            .current_dir(&self.tree)
-            .env("CARGO_TARGET_DIR", build)
-            .env("RUSTUP_AUTO_INSTALL", "0")
-            .env_remove("RUSTUP_TOOLCHAIN")
-            .env_remove("RUSTUP_TOOLCHAIN_SOURCE");
-        for (key, _) in std::env::vars_os() {
-            if key.to_string_lossy().starts_with("GIT_") {
-                command.env_remove(key);
-            }
-        }
-        command
+        cargo_command(&self.tree, build)
     }
 
     /// Каталог сборки рядом с основным: `target/gate-<суффикс>`.
@@ -536,22 +567,6 @@ fn show_failure(log: &Path) {
         println!("{line}");
     }
     println!("полный вывод: {}", log.display());
-}
-
-fn read_lossy(path: &Path) -> String {
-    fs::read(path)
-        .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
-        .unwrap_or_default()
-}
-
-/// Установлена ли программа: она запускается и отвечает на `--version`.
-fn installed(program: &str) -> bool {
-    Command::new(program)
-        .arg("--version")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .is_ok_and(|status| status.success())
 }
 
 /// Путь файла от корня дерева — для сообщений.
