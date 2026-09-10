@@ -210,3 +210,36 @@ fn lock_of_a_dead_process_is_taken_over() {
     assert_eq!(run.code, 0, "{}", run.output());
     assert!(!lock.exists(), "блокировка осталась после коммита");
 }
+
+#[test]
+fn path_already_removed_with_git_rm_is_committed() {
+    // `git rm` убирает путь и из рабочего дерева, и из индекса. git add по
+    // такому пути не находит ничего и отказывает, хотя удаление — законное
+    // изменение, которое надо закоммитить.
+    let repo = planned_repo("git-rm-path");
+    repo.git(&["rm", "-q", "old/file.txt"]);
+    let run = commit(&repo, OK, &[], &["old/file.txt"]);
+    assert_eq!(run.code, 0, "{}", run.output());
+    assert_eq!(
+        repo.git(&["show", "--name-status", "--format=", "HEAD"])
+            .trim(),
+        "D\told/file.txt"
+    );
+}
+
+#[test]
+fn path_unknown_to_git_is_refused() {
+    // Контроль: путь, которого нет ни в рабочем дереве, ни в индексе, ни в
+    // HEAD, — опечатка, а не удаление.
+    let repo = planned_repo("unknown-path");
+    repo.write("new.txt", "new\n");
+    let head = repo.git(&["rev-parse", "HEAD"]);
+    let run = commit(&repo, OK, &[], &["new.txt", "nosuch.txt"]);
+    assert_eq!(run.code, 1, "{}", run.output());
+    assert!(run.verdict().contains("git add упал"), "{}", run.output());
+    assert_eq!(
+        repo.git(&["rev-parse", "HEAD"]),
+        head,
+        "опечатка создала коммит"
+    );
+}

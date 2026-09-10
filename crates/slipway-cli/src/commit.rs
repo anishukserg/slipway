@@ -169,10 +169,20 @@ fn commit(args: &Args) -> Result<String, Refusal> {
     let _lock = Lock::acquire(&repo.git_dir.join(layout::COMMIT_LOCK), args.timeout)
         .map_err(|problem| refuse(3, problem))?;
 
-    let mut add = git::command(root);
-    add.args(["add", "-A", "--"]).args(&args.paths);
-    if !output.run(&mut add) {
-        return Err(refuse(1, "git add упал на перечисленных путях"));
+    // Путь, удалённый через `git rm`, уже убран и из рабочего дерева, и из
+    // индекса: git add по нему не находит ничего и отказывает. Его удаление уже
+    // в индексе, поэтому в git add он не передаётся, а в коммит — передаётся.
+    let to_add: Vec<&OsString> = args
+        .paths
+        .iter()
+        .filter(|path| !removed_from_index(root, path))
+        .collect();
+    if !to_add.is_empty() {
+        let mut add = git::command(root);
+        add.args(["add", "-A", "--"]).args(&to_add);
+        if !output.run(&mut add) {
+            return Err(refuse(1, "git add упал на перечисленных путях"));
+        }
     }
     let staged = git::command(root)
         .args(["diff", "--cached", "--quiet", "--"])
@@ -202,6 +212,25 @@ fn commit(args: &Args) -> Result<String, Refusal> {
     }
     git::read(root, &["rev-parse", "--short", "HEAD"])
         .ok_or_else(|| refuse(4, "коммит создан, но HEAD не читается"))
+}
+
+/// Путь удалён через `git rm`: его нет ни в рабочем дереве, ни в индексе, но он
+/// есть в HEAD. Путь, неизвестный git вовсе, сюда не относится — git add
+/// отвергнет его как опечатку.
+fn removed_from_index(root: &Path, path: &std::ffi::OsStr) -> bool {
+    if root.join(path).exists() {
+        return false;
+    }
+    let listed = |args: &[&str]| {
+        git::command(root)
+            .args(args)
+            .arg("--")
+            .arg(path)
+            .stderr(Stdio::null())
+            .output()
+            .is_ok_and(|out| out.status.success() && !out.stdout.is_empty())
+    };
+    !listed(&["ls-files", "--cached"]) && listed(&["ls-tree", "-r", "--name-only", "HEAD"])
 }
 
 /// Куда идёт вывод git и хуков: в журнал или на терминал.
