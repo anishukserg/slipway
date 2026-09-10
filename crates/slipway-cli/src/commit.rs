@@ -301,8 +301,9 @@ impl Lock {
             }
             if started.elapsed() >= timeout {
                 return Err(format!(
-                    "блокировка коммита не получена за {} с ({})",
+                    "блокировка коммита не получена за {} с: {} ({})",
                     timeout.as_secs(),
+                    describe_holder(path),
                     path.display()
                 ));
             }
@@ -317,16 +318,43 @@ impl Drop for Lock {
     }
 }
 
-/// Процесс, записанный в блокировке, завершился. Без /proc это не определить —
-/// блокировка считается живой и ждёт тайм-аута.
-fn holder_is_dead(path: &Path) -> bool {
-    let Some(pid) = fs::read_to_string(path)
+/// Сколько файл блокировки без номера процесса считается захватываемым прямо
+/// сейчас: живой процесс пишет номер сразу после атомарного создания файла.
+const PIDLESS_LOCK_GRACE: Duration = Duration::from_secs(10);
+
+/// Номер процесса из файла блокировки.
+fn holder_pid(path: &Path) -> Option<u32> {
+    fs::read_to_string(path)
         .ok()
-        .and_then(|text| text.trim().parse::<u32>().ok())
-    else {
-        return false;
-    };
-    Path::new("/proc/self").exists() && !Path::new("/proc").join(pid.to_string()).exists()
+        .and_then(|text| text.trim().parse().ok())
+}
+
+/// Блокировка брошена. С номером процесса — процесс завершился; без /proc это
+/// не определить, и блокировка ждёт тайм-аута. Без номера — файл старше
+/// `PIDLESS_LOCK_GRACE`: так выглядит след flock прежнего скрипта коммита или
+/// процесса, умершего между созданием файла и записью номера.
+fn holder_is_dead(path: &Path) -> bool {
+    match holder_pid(path) {
+        Some(pid) => {
+            Path::new("/proc/self").exists() && !Path::new("/proc").join(pid.to_string()).exists()
+        }
+        None => fs::metadata(path)
+            .and_then(|meta| meta.modified())
+            .ok()
+            .and_then(|modified| modified.elapsed().ok())
+            .is_some_and(|age| age > PIDLESS_LOCK_GRACE),
+    }
+}
+
+/// Кто держит блокировку — для отказа по тайм-ауту.
+fn describe_holder(path: &Path) -> String {
+    match holder_pid(path) {
+        Some(pid) => format!("держит процесс {pid}"),
+        None => format!(
+            "файл без номера процесса моложе {} с",
+            PIDLESS_LOCK_GRACE.as_secs()
+        ),
+    }
 }
 
 #[cfg(test)]
