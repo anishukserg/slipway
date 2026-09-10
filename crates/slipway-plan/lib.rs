@@ -20,7 +20,11 @@ mod tests {
     fn work_is_planned_within_wip() {
         for s in ALL_SLICES {
             let n = ALL_WORK.iter().filter(|w| w.slice.index() == s.id).count();
-            assert!(n <= 5, "срез «{}» несёт {n} единиц работы", s.title.as_str());
+            assert!(
+                n <= 5,
+                "срез «{}» несёт {n} единиц работы",
+                s.title.as_str()
+            );
         }
     }
 }

@@ -11,6 +11,9 @@ description = "Демо-реестр: показывает, что ссылка-
 [lib]
 path = "lib.rs"
 
+[lints]
+workspace = true
+
 [dependencies]
 slipway-core = { workspace = true }
 slipway-knowledge = { workspace = true }

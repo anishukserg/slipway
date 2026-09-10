@@ -30,7 +30,10 @@ impl<A> Taxon<A> {
     /// Только для `declare_taxonomy!`. В тексте реестра вызов отвергается сканом.
     #[doc(hidden)]
     pub const fn __new_unchecked(name: &'static str) -> Self {
-        Self { name, axis: PhantomData }
+        Self {
+            name,
+            axis: PhantomData,
+        }
     }
 
     pub const fn as_str(&self) -> &'static str {
@@ -107,6 +110,6 @@ mod tests {
     fn taxon_resolves_by_path() {
         assert_eq!(taxon!(Subsystem, Storage).as_str(), "Storage");
         assert_eq!(Subsystem::ALL.len(), 2);
-        assert_eq!(Team::CoreDb.as_str(), "CoreDb");
+        assert_eq!(Team::ALL, &[Team::CoreDb]);
     }
 }

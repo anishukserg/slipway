@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# pre-push по решению 8: в удалённый репозиторий не уходят ветки архива и
+# история, в дереве или сообщениях которой есть имя из локального списка
+# внешних проектов (решение 9).
+#
+# git передаёт на stdin строки
+# `<локальная ссылка> <локальный sha> <удалённая ссылка> <удалённый sha>`.
+set -uo pipefail
+if locale -a 2>/dev/null | grep -qiE '^c\.utf-?8$'; then export LC_ALL=C.UTF-8; fi
+
+git_dir=$(git rev-parse --absolute-git-dir) || exit 2
+names="$git_dir/info/slipway-external-names"
+zero=0000000000000000000000000000000000000000
+refused=0
+
+patterns=$(mktemp "$git_dir/slipway-push-names.XXXXXX") || exit 2
+trap 'rm -f "$patterns"' EXIT
+grep -vE '^[[:space:]]*(#|$)' "$names" > "$patterns" 2>/dev/null
+if [[ ! -s $patterns ]]; then
+  echo "pre-push: список внешних имён $names пуст или не задан — история на внешние имена не проверялась" >&2
+fi
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [[ -n ${local_ref:-} && $local_sha != "$zero" ]] || continue
+  if [[ $local_ref == refs/heads/archive/* || $remote_ref == refs/heads/archive/* ]]; then
+    echo "pre-push: ветка архива $local_ref не публикуется (решение 9)" >&2
+    refused=1
+    continue
+  fi
+  [[ -s $patterns ]] || continue
+  if [[ $remote_sha == "$zero" ]]; then
+    range=$local_sha
+  else
+    range="$remote_sha..$local_sha"
+  fi
+  while read -r commit; do
+    files=$(git grep -I -i -l -F -f "$patterns" "$commit" -- . 2> /dev/null)
+    in_message=$(git log -1 --format=%B "$commit" | grep -i -F -f "$patterns")
+    if [[ -n $files || -n $in_message ]]; then
+      echo "pre-push: коммит $(git rev-parse --short "$commit") содержит внешнее имя" >&2
+      if [[ -n $files ]]; then
+        sed "s|^$commit:|  файл: |" <<< "$files" >&2
+      fi
+      if [[ -n $in_message ]]; then
+        echo "  в сообщении коммита" >&2
+      fi
+      refused=1
+    fi
+  done < <(git rev-list "$range")
+done
+
+if (( refused )); then
+  echo "PUSH REFUSED" >&2
+  exit 1
+fi

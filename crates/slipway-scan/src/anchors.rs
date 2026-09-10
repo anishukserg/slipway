@@ -88,12 +88,16 @@ pub fn scan_anchors(roots: &[&Path]) -> Result<Vec<ScannedAnchor>, super::ScanEr
 fn walk(dir: &Path, out: &mut Vec<ScannedAnchor>) -> Result<(), super::ScanError> {
     // Нечитаемый каталог — ошибка, а не пустой результат: скан, не увидевший
     // предмета, не должен выглядеть успешным.
-    let entries = fs::read_dir(dir)
-        .map_err(|e| super::ScanError::Io(format!("{}: {e}", dir.display())))?;
+    let entries =
+        fs::read_dir(dir).map_err(|e| super::ScanError::Io(format!("{}: {e}", dir.display())))?;
     for entry in entries {
-        let path = entry.map_err(|e| super::ScanError::Io(e.to_string()))?.path();
+        let path = entry
+            .map_err(|e| super::ScanError::Io(e.to_string()))?
+            .path();
         if path.is_dir() {
-            let skip = path.file_name().is_some_and(|n| n == "target" || n == ".git");
+            let skip = path
+                .file_name()
+                .is_some_and(|n| n == "target" || n == ".git");
             if !skip {
                 walk(&path, out)?;
             }
@@ -122,7 +126,12 @@ pub fn anchors_in_file(text: &str, file: &str) -> Result<Vec<ScannedAnchor>, sup
     })?;
 
     let lines: Vec<&str> = text.lines().collect();
-    let mut collector = Collector { file, lines: &lines, found: Vec::new(), error: None };
+    let mut collector = Collector {
+        file,
+        lines: &lines,
+        found: Vec::new(),
+        error: None,
+    };
     collector.visit_file(&parsed);
     match collector.error {
         Some(e) => Err(e),
@@ -146,7 +155,11 @@ impl Collector<'_> {
             Ok(Some(found)) => found,
             Ok(None) => return,
             Err((line, detail)) => {
-                self.error = Some(super::ScanError::Anchor { file: self.file.to_owned(), line, detail });
+                self.error = Some(super::ScanError::Anchor {
+                    file: self.file.to_owned(),
+                    line,
+                    detail,
+                });
                 return;
             }
         };
@@ -159,7 +172,11 @@ impl Collector<'_> {
             line_start: start as u32,
             line_end: end as u32,
             mode,
-            source_text: self.lines.get(start.saturating_sub(1)..end).unwrap_or_default().join("\n"),
+            source_text: self
+                .lines
+                .get(start.saturating_sub(1)..end)
+                .unwrap_or_default()
+                .join("\n"),
         });
     }
 }
@@ -259,9 +276,12 @@ fn foreign_item_attrs(node: &syn::ForeignItem) -> &[syn::Attribute] {
 /// с путём: `#[slipway::doc_anchor(...)]`. Ошибка возвращается со строкой
 /// атрибута.
 fn anchor_attr(attrs: &[syn::Attribute]) -> Result<Option<(String, AnchorMode)>, (usize, String)> {
-    let mut marks = attrs
-        .iter()
-        .filter(|a| a.path().segments.last().is_some_and(|s| s.ident == "doc_anchor"));
+    let mut marks = attrs.iter().filter(|a| {
+        a.path()
+            .segments
+            .last()
+            .is_some_and(|s| s.ident == "doc_anchor")
+    });
     let Some(attr) = marks.next() else {
         return Ok(None);
     };
@@ -273,7 +293,11 @@ fn anchor_attr(attrs: &[syn::Attribute]) -> Result<Option<(String, AnchorMode)>,
     let mut id: Option<String> = None;
     let mut mode: Option<String> = None;
     attr.parse_nested_meta(|meta| {
-        let key = meta.path.get_ident().map(ToString::to_string).unwrap_or_default();
+        let key = meta
+            .path
+            .get_ident()
+            .map(ToString::to_string)
+            .unwrap_or_default();
         let slot = match key.as_str() {
             "id" => &mut id,
             "mode" => &mut mode,
@@ -300,10 +324,18 @@ fn anchor_attr(attrs: &[syn::Attribute]) -> Result<Option<(String, AnchorMode)>,
 pub fn emit_anchor_refs(anchors: &[ScannedAnchor]) -> String {
     use std::fmt::Write as _;
     let mut out = String::from("// ПОРОЖДЕНО slipway-scan. Не редактировать.\n\n");
-    out.push_str("#[allow(non_upper_case_globals)]\npub mod anchor {\n    use slipway_core::AnchorId;\n");
+    out.push_str("#[allow(non_upper_case_globals, unused_imports)]\npub mod anchor {\n    use slipway_core::AnchorId;\n");
     for a in anchors {
-        let _ = writeln!(out, "    /// `{}` — {}:{}-{}", a.id, a.file, a.line_start, a.line_end);
-        let _ = writeln!(out, "    pub const {}: AnchorId = AnchorId::__from_scan({:?});", a.ident, a.id);
+        let _ = writeln!(
+            out,
+            "    /// `{}` — {}:{}-{}",
+            a.id, a.file, a.line_start, a.line_end
+        );
+        let _ = writeln!(
+            out,
+            "    pub const {}: AnchorId = AnchorId::__from_scan({:?});",
+            a.ident, a.id
+        );
     }
     out.push_str("}\n");
     out
@@ -335,8 +367,14 @@ impl PlanIR {
         let found = anchors_in_file(SRC, "plan.rs").unwrap();
         let ids: Vec<_> = found.iter().map(|a| a.id.as_str()).collect();
         assert!(ids.contains(&"plan-ir"), "разметка верхнего уровня");
-        assert!(ids.contains(&"nested-thing"), "разметка во вложенном модуле");
-        assert!(ids.contains(&"plan-validate"), "разметка на методе внутри impl");
+        assert!(
+            ids.contains(&"nested-thing"),
+            "разметка во вложенном модуле"
+        );
+        assert!(
+            ids.contains(&"plan-validate"),
+            "разметка на методе внутри impl"
+        );
     }
 
     #[test]
@@ -351,7 +389,11 @@ impl PlanIR {
     fn source_text_excludes_the_attribute_line() {
         let found = anchors_in_file(SRC, "plan.rs").unwrap();
         let a = found.iter().find(|a| a.id == "plan-ir").unwrap();
-        assert!(a.source_text.starts_with("pub struct PlanIR"), "{:?}", a.source_text);
+        assert!(
+            a.source_text.starts_with("pub struct PlanIR"),
+            "{:?}",
+            a.source_text
+        );
         assert!(!a.source_text.contains("doc_anchor"));
     }
 
@@ -393,10 +435,15 @@ impl PlanIR {
     /// или строки атрибута.
     #[test]
     fn source_text_starts_at_item_after_doc_comment() {
-        let src = "/// Заголовок.\n#[doc_anchor(id = \"hdr\")]\npub struct Hdr {\n    pub v: u8,\n}\n";
+        let src =
+            "/// Заголовок.\n#[doc_anchor(id = \"hdr\")]\npub struct Hdr {\n    pub v: u8,\n}\n";
         let a = &anchors_in_file(src, "h.rs").unwrap()[0];
         assert_eq!(a.line_start, 3, "{:?}", a.source_text);
-        assert!(a.source_text.starts_with("pub struct Hdr"), "{:?}", a.source_text);
+        assert!(
+            a.source_text.starts_with("pub struct Hdr"),
+            "{:?}",
+            a.source_text
+        );
     }
 
     /// Разметка на методе трейта, константе в impl и элементе внутри
@@ -417,7 +464,11 @@ fn outer() {
     fn inner() {}
 }
 "#;
-        let ids: Vec<String> = anchors_in_file(src, "c.rs").unwrap().into_iter().map(|a| a.id).collect();
+        let ids: Vec<String> = anchors_in_file(src, "c.rs")
+            .unwrap()
+            .into_iter()
+            .map(|a| a.id)
+            .collect();
         for want in ["codec-encode", "hdr-size", "inner-fn"] {
             assert!(ids.iter().any(|i| i == want), "{want} не найден: {ids:?}");
         }
@@ -430,8 +481,16 @@ fn outer() {
         let dir = std::env::temp_dir().join(format!("slipway-anchors-dup-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
-        fs::write(dir.join("a.rs"), "#[doc_anchor(id = \"hdr\")]\npub struct A;\n").unwrap();
-        fs::write(dir.join("b.rs"), "#[doc_anchor(id = \"hdr\")]\npub struct B;\n").unwrap();
+        fs::write(
+            dir.join("a.rs"),
+            "#[doc_anchor(id = \"hdr\")]\npub struct A;\n",
+        )
+        .unwrap();
+        fs::write(
+            dir.join("b.rs"),
+            "#[doc_anchor(id = \"hdr\")]\npub struct B;\n",
+        )
+        .unwrap();
         let err = scan_anchors(&[&dir]).expect_err("один id в двух местах принят");
         assert!(err.to_string().contains("уже занят"), "{err}");
     }
@@ -439,7 +498,8 @@ fn outer() {
     /// Скан несуществующего каталога — ошибка, а не пустой успешный результат.
     #[test]
     fn missing_root_is_an_error_not_an_empty_scan() {
-        let err = scan_anchors(&[Path::new("/nonexistent/slipway-src")]).expect_err("пустой скан принят");
+        let err =
+            scan_anchors(&[Path::new("/nonexistent/slipway-src")]).expect_err("пустой скан принят");
         assert!(err.to_string().contains("slipway-src"), "{err}");
     }
 }

@@ -6,6 +6,9 @@ rust-version.workspace = true
 license.workspace = true
 description = "Slipway: слой знания — схема решений, спецификаций, глоссария"
 
+[lints]
+workspace = true
+
 [dependencies]
 slipway-core = { workspace = true }
 chrono = { workspace = true }

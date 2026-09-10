@@ -6,5 +6,8 @@ rust-version.workspace = true
 license.workspace = true
 description = "Slipway: слой работы — направления, срезы, единицы работы и их происхождение"
 
+[lints]
+workspace = true
+
 [dependencies]
 slipway-core = { workspace = true }

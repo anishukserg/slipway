@@ -14,11 +14,6 @@ fn main() {
 
     println!("cargo::rerun-if-changed=adr");
     println!("cargo::rerun-if-changed=rfc");
-    println!(
-        "cargo::warning=slipway-meta: решений {}, спецификаций {}",
-        decisions.len(),
-        specs.len()
-    );
 }
 
 fn unwrap_scan<T>(r: Result<T, slipway_scan::ScanError>) -> T {

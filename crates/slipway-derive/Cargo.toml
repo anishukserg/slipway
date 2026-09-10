@@ -9,5 +9,8 @@ description = "Slipway: атрибут-маркер #[doc_anchor] для раз�
 [lib]
 proc-macro = true
 
+[lints]
+workspace = true
+
 [dependencies]
 slipway-core = { workspace = true }

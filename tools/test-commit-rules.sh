@@ -114,4 +114,29 @@ checks=$((checks + 1))
 [[ $(tail -n 1 <<< "$output") == "GATE FAIL: в дереве нет Cargo.toml"* ]] \
   || fail "калитка запустила сборку без манифеста в дереве: «$(tail -n 1 <<< "$output")»"
 
+# Публикация: pre-push не выпускает историю со следом внешнего имени и ветки
+# архива, а чистую историю выпускает.
+pre_push="$here/../.githooks/pre-push"
+[[ -f $pre_push ]] || fail "нет .githooks/pre-push рядом с tools"
+zero=0000000000000000000000000000000000000000
+clean_head=$(cd "$repo" && git rev-parse HEAD)
+echo 'zzvneshniy' > "$repo/.git/info/slipway-external-names"
+echo 'след ZZVneshniy' > "$repo/leak.txt"
+attempt 0 "коммит со следом для проверки публикации" "$ok" leak.txt
+leak_head=$(cd "$repo" && git rev-parse HEAD)
+push() {
+  (cd "$repo" && printf '%s %s %s %s\n' "$1" "$2" "$1" "$zero" \
+    | bash "$pre_push" origin selftest > /dev/null 2>&1)
+}
+checks=$((checks + 1))
+if push refs/heads/master "$leak_head"; then
+  fail "pre-push выпустил историю со следом внешнего имени"
+fi
+checks=$((checks + 1))
+if push refs/heads/archive/old "$clean_head"; then
+  fail "pre-push выпустил ветку архива"
+fi
+checks=$((checks + 1))
+push refs/heads/master "$clean_head" || fail "pre-push не выпустил чистую историю"
+
 echo "SELFTEST OK ($checks проверок)"

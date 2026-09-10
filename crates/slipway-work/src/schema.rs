@@ -59,10 +59,17 @@ pub enum WorkOrigin {
     /// Расхождение фактического с заявленным. Реестра инвариантов с путями
     /// пока нет, поэтому нарушенное утверждение названо текстом рядом со
     /// спецификацией, где оно объявлено.
-    Divergence { specification: RfcRef, violated: NonEmptyStr },
+    Divergence {
+        specification: RfcRef,
+        violated: NonEmptyStr,
+    },
     /// Снятие неопределённости. Поля, объявляющего приземление кода, нет:
     /// исследование, уезжающее в main, невыразимо.
-    Inquiry { question: NonEmptyStr, produces: InquiryOutcome, timebox_days: NonZeroU16 },
+    Inquiry {
+        question: NonEmptyStr,
+        produces: InquiryOutcome,
+        timebox_days: NonZeroU16,
+    },
     /// Удаление кода, замещённого решением. Принимает только ссылку
     /// из модуля `superseded`.
     Retirement(SupersededRef),

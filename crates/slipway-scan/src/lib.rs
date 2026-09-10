@@ -43,13 +43,27 @@ const BYPASS_IDENTS: [&str; 2] = ["__from_scan", "__new_unchecked"];
 #[derive(Debug)]
 pub enum ScanError {
     Io(String),
-    Parse { file: String, detail: String },
+    Parse {
+        file: String,
+        detail: String,
+    },
     /// Имя файла не каноническое для идентификатора внутри него.
-    IdMismatch { file: String, declared: u32, expected: String },
+    IdMismatch {
+        file: String,
+        declared: u32,
+        expected: String,
+    },
     /// В тексте реестра вызван конструктор, предназначенный скану.
-    Bypass { file: String, ident: String },
+    Bypass {
+        file: String,
+        ident: String,
+    },
     /// Разметка кода записана с ошибкой.
-    Anchor { file: String, line: usize, detail: String },
+    Anchor {
+        file: String,
+        line: usize,
+        detail: String,
+    },
 }
 
 impl std::fmt::Display for ScanError {
@@ -81,12 +95,17 @@ pub fn scan_decisions(dir: &Path) -> Result<Vec<ScannedDecision>, ScanError> {
 
 fn scan_dir(dir: &Path, macro_name: &str, prefix: char) -> Result<Vec<ScannedDecision>, ScanError> {
     let mut found = Vec::new();
-    let entries = fs::read_dir(dir).map_err(|e| ScanError::Io(format!("{}: {e}", dir.display())))?;
+    let entries =
+        fs::read_dir(dir).map_err(|e| ScanError::Io(format!("{}: {e}", dir.display())))?;
 
     for entry in entries {
         let path = entry.map_err(|e| ScanError::Io(e.to_string()))?.path();
         let is_rs = path.extension().is_some_and(|e| e == "rs");
-        let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or_default().to_owned();
+        let stem = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or_default()
+            .to_owned();
         if !is_rs || stem == "mod" {
             continue;
         }
@@ -112,8 +131,10 @@ pub fn parse_entry(
     macro_name: &str,
     prefix: char,
 ) -> Result<ScannedDecision, ScanError> {
-    let file = syn::parse_file(text)
-        .map_err(|e| ScanError::Parse { file: module.into(), detail: e.to_string() })?;
+    let file = syn::parse_file(text).map_err(|e| ScanError::Parse {
+        file: module.into(),
+        detail: e.to_string(),
+    })?;
 
     let mac = file
         .items
@@ -122,7 +143,11 @@ pub fn parse_entry(
             // Путь может быть как `adr!`, так и `slipway_knowledge::adr!` —
             // значим только последний сегмент.
             syn::Item::Macro(m)
-                if m.mac.path.segments.last().is_some_and(|s| s.ident == macro_name) =>
+                if m.mac
+                    .path
+                    .segments
+                    .last()
+                    .is_some_and(|s| s.ident == macro_name) =>
             {
                 Some(&m.mac)
             }
@@ -150,15 +175,27 @@ pub fn parse_entry(
     // ни через ведущие нули, ни через имя без номера.
     let expected = format!("{prefix}{id:04}");
     if module != expected {
-        return Err(ScanError::IdMismatch { file: module.into(), declared: id, expected });
+        return Err(ScanError::IdMismatch {
+            file: module.into(),
+            declared: id,
+            expected,
+        });
     }
 
     if let Some(ident) = find_bypass(text) {
-        return Err(ScanError::Bypass { file: module.into(), ident });
+        return Err(ScanError::Bypass {
+            file: module.into(),
+            ident,
+        });
     }
 
     let status = extract_status(&tokens);
-    Ok(ScannedDecision { id, module: module.to_owned(), status, file: String::new() })
+    Ok(ScannedDecision {
+        id,
+        module: module.to_owned(),
+        status,
+        file: String::new(),
+    })
 }
 
 /// Ищет конструкторы скана во всём тексте файла, включая вложенные группы.
@@ -197,9 +234,14 @@ fn extract_status(tokens: &[proc_macro2::TokenTree]) -> Status {
         .position(|i| i == "status")
         .and_then(|p| idents.get(p + 1..));
 
-    match after_status.and_then(|rest| rest.iter().find(|i| {
-        matches!(i.as_str(), "Draft" | "Active" | "Deprecated" | "SupersededBy")
-    })) {
+    match after_status.and_then(|rest| {
+        rest.iter().find(|i| {
+            matches!(
+                i.as_str(),
+                "Draft" | "Active" | "Deprecated" | "SupersededBy"
+            )
+        })
+    }) {
         Some(s) if s == "Active" => Status::Active,
         Some(s) if s == "Deprecated" => Status::Deprecated,
         Some(s) if s == "SupersededBy" => Status::SupersededBy,
@@ -218,15 +260,22 @@ pub fn emit_refs(decisions: &[ScannedDecision]) -> String {
         let _ = writeln!(out, "#[path = {:?}]\npub mod {};", d.file, d.module);
     }
 
-    out.push_str("\n#[allow(non_upper_case_globals)]\npub mod adr {\n    use slipway_core::AdrRef;\n");
+    out.push_str("\n#[allow(non_upper_case_globals, unused_imports)]\npub mod adr {\n    use slipway_core::AdrRef;\n");
     for d in decisions {
-        let _ = writeln!(out, "    pub const {}: AdrRef = AdrRef::__from_scan({});", d.module, d.id);
+        let _ = writeln!(
+            out,
+            "    pub const {}: AdrRef = AdrRef::__from_scan({});",
+            d.module, d.id
+        );
     }
     out.push_str("}\n\n");
 
     out.push_str("/// Только замещённые решения: уборка живого кода невыразима.\n");
-    out.push_str("#[allow(non_upper_case_globals)]\npub mod superseded {\n    use slipway_core::SupersededRef;\n");
-    for d in decisions.iter().filter(|d| d.status == Status::SupersededBy) {
+    out.push_str("#[allow(non_upper_case_globals, unused_imports)]\npub mod superseded {\n    use slipway_core::SupersededRef;\n");
+    for d in decisions
+        .iter()
+        .filter(|d| d.status == Status::SupersededBy)
+    {
         let _ = writeln!(
             out,
             "    pub const {}: SupersededRef = SupersededRef::__from_scan({});",
@@ -244,7 +293,11 @@ pub fn emit_refs(decisions: &[ScannedDecision]) -> String {
             m = d.module,
             id = d.id
         );
-        let (neg, what) = if d.status == Status::SupersededBy { ("", "замещено") } else { ("!", "не замещено") };
+        let (neg, what) = if d.status == Status::SupersededBy {
+            ("", "замещено")
+        } else {
+            ("!", "не замещено")
+        };
         let _ = writeln!(
             out,
             "const _: () = assert!({neg}matches!({m}::DECISION.status, ::slipway_knowledge::DocStatus::SupersededBy(_)), \"slipway-scan: по тексту {m} {what}, компилятор вычислил иное\");",
@@ -266,9 +319,13 @@ pub fn emit_spec_refs(specs: &[ScannedDecision]) -> String {
     for s in specs {
         let _ = writeln!(out, "#[path = {:?}]\npub mod {};", s.file, s.module);
     }
-    out.push_str("\n#[allow(non_upper_case_globals)]\npub mod rfc {\n    use slipway_core::RfcRef;\n");
+    out.push_str("\n#[allow(non_upper_case_globals, unused_imports)]\npub mod rfc {\n    use slipway_core::RfcRef;\n");
     for s in specs {
-        let _ = writeln!(out, "    pub const {}: RfcRef = RfcRef::__from_scan({});", s.module, s.id);
+        let _ = writeln!(
+            out,
+            "    pub const {}: RfcRef = RfcRef::__from_scan({});",
+            s.module, s.id
+        );
     }
     out.push_str("}\n\n");
     for s in specs {
@@ -315,8 +372,18 @@ mod tests {
     #[test]
     fn superseded_module_holds_only_superseded() {
         let ds = vec![
-            ScannedDecision { id: 1, module: "a0001".into(), status: Status::SupersededBy, file: "/x/a0001.rs".into() },
-            ScannedDecision { id: 2, module: "a0002".into(), status: Status::Active, file: "/x/a0002.rs".into() },
+            ScannedDecision {
+                id: 1,
+                module: "a0001".into(),
+                status: Status::SupersededBy,
+                file: "/x/a0001.rs".into(),
+            },
+            ScannedDecision {
+                id: 2,
+                module: "a0002".into(),
+                status: Status::Active,
+                file: "/x/a0002.rs".into(),
+            },
         ];
         let out = emit_refs(&ds);
         assert!(out.contains("pub const a0001: SupersededRef"));
@@ -327,8 +394,18 @@ mod tests {
     #[test]
     fn emitted_code_cross_checks_scan_against_compiler() {
         let ds = vec![
-            ScannedDecision { id: 1, module: "a0001".into(), status: Status::SupersededBy, file: "/x/a0001.rs".into() },
-            ScannedDecision { id: 2, module: "a0002".into(), status: Status::Active, file: "/x/a0002.rs".into() },
+            ScannedDecision {
+                id: 1,
+                module: "a0001".into(),
+                status: Status::SupersededBy,
+                file: "/x/a0001.rs".into(),
+            },
+            ScannedDecision {
+                id: 2,
+                module: "a0002".into(),
+                status: Status::Active,
+                file: "/x/a0002.rs".into(),
+            },
         ];
         let out = emit_refs(&ds);
         assert!(out.contains("assert!(a0001::DECISION.id == 1"));

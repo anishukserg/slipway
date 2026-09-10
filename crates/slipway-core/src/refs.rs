@@ -114,7 +114,16 @@ macro_rules! numbered {
     )*};
 }
 
-numbered!(AdrRef, RfcRef, SupersededRef, BreakingRef, GateRef, ThrustRef, SliceRef, WorkRef);
+numbered!(
+    AdrRef,
+    RfcRef,
+    SupersededRef,
+    BreakingRef,
+    GateRef,
+    ThrustRef,
+    SliceRef,
+    WorkRef
+);
 
 impl AnchorId {
     pub const fn as_str(self) -> &'static str {

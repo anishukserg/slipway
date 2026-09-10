@@ -6,7 +6,7 @@
 //!
 //! Для строк этого мало: `nonempty![""]` непуст как список и пуст по смыслу
 //! (атака E6). Поэтому списки имён и шагов строятся из [`NonEmptyStr`] через
-//! [`nonempty_str!`], где пустое значение — ошибка вычисления константы.
+//! [`nonempty_str!`](crate::nonempty_str), где пустое значение — ошибка вычисления константы.
 
 /// Список, содержащий хотя бы один элемент, конструируемый в `const`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -41,7 +41,7 @@ impl<T: 'static> NonEmpty<T> {
 
 /// Строка, в которой есть хотя бы один непробельный символ.
 ///
-/// Конструктор — `const fn`: в статике и в [`nonempty_str!`] пустое значение
+/// Конструктор — `const fn`: в статике и в [`nonempty_str!`](crate::nonempty_str) пустое значение
 /// отвергается при компиляции (E0080), в рантайме — паникой.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NonEmptyStr(&'static str);

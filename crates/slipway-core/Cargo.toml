@@ -6,4 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 description = "Slipway: общие типы и макросы — ссылочные newtype, NonEmpty, обратимость, таксономия"
 
+[lints]
+workspace = true
+
 [dependencies]

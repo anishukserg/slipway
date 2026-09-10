@@ -6,6 +6,9 @@ rust-version.workspace = true
 license.workspace = true
 description = "Slipway: скан реестра и порождение модулей констант для ссылок"
 
+[lints]
+workspace = true
+
 [dependencies]
 slipway-core = { workspace = true }
 syn = { workspace = true }

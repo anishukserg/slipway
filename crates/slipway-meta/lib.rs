@@ -12,35 +12,23 @@ include!(concat!(env!("OUT_DIR"), "/rfc.rs"));
 #[cfg(test)]
 mod tests {
     use super::*;
-    use slipway_knowledge::DocStatus;
 
+    /// Непустота авторов и инвариантов обеспечена типом; здесь проверяется
+    /// только то, чего тип не выражает: реестры не пусты, у записей есть
+    /// заголовки.
     #[test]
-    fn every_decision_is_reachable() {
-        assert!(!ALL.is_empty(), "реестр решений не должен быть пуст");
+    fn registries_are_not_empty() {
+        assert!(!ALL.is_empty(), "реестр решений пуст");
+        assert!(!ALL_SPECS.is_empty(), "реестр спецификаций пуст");
         for d in ALL {
-            assert!(!d.title.is_empty());
-            assert!(d.authors.len() >= 1);
+            assert!(!d.title.trim().is_empty(), "решение {} без заголовка", d.id);
         }
-    }
-
-    #[test]
-    fn specifications_declare_invariants() {
         for s in ALL_SPECS {
-            // Непустота обеспечена типом; проверяем осмысленность длины.
-            assert!(s.invariants.len() >= 1, "{}", s.title);
-        }
-    }
-
-    #[test]
-    fn specifications_point_at_decisions_that_exist() {
-        // Ссылки уже проверены компилятором; здесь — что они не пусты
-        // у спецификаций, которые объявлены реализованными.
-        for s in ALL_SPECS {
-            if matches!(s.status, DocStatus::Active) && s.decided_by.is_empty() {
-                // Спецификация без решений законна: она описывает требуемое,
-                // решения могут появиться позже.
-                continue;
-            }
+            assert!(
+                !s.title.trim().is_empty(),
+                "спецификация {} без заголовка",
+                s.id
+            );
         }
     }
 }

@@ -82,22 +82,38 @@ fn check_args(args: TokenStream) -> Result<(), Rejection> {
         last_key = key.span();
         match tokens.next() {
             Some(TokenTree::Punct(p)) if p.as_char() == '=' => {}
-            other => return Err((span_or(other, key.span()), format!("после ключа {key} ожидается `=`"))),
+            other => {
+                return Err((
+                    span_or(other, key.span()),
+                    format!("после ключа {key} ожидается `=`"),
+                ))
+            }
         }
         let value = match tokens.next() {
             Some(TokenTree::Literal(lit)) => match string_value(&lit) {
                 Some(text) => (text, lit.span()),
                 None => {
-                    return Err((lit.span(), "ожидается строка в двойных кавычках без экранирования".to_owned()))
+                    return Err((
+                        lit.span(),
+                        "ожидается строка в двойных кавычках без экранирования".to_owned(),
+                    ))
                 }
             },
-            other => return Err((span_or(other, key.span()), format!("после `{key} =` ожидается строка"))),
+            other => {
+                return Err((
+                    span_or(other, key.span()),
+                    format!("после `{key} =` ожидается строка"),
+                ))
+            }
         };
         let slot = match key.to_string().as_str() {
             "id" => &mut id,
             "mode" => &mut mode,
             other => {
-                return Err((key.span(), format!("неизвестный ключ разметки {other:?}; допустимы id и mode")))
+                return Err((
+                    key.span(),
+                    format!("неизвестный ключ разметки {other:?}; допустимы id и mode"),
+                ))
             }
         };
         if slot.replace(value).is_some() {
@@ -106,7 +122,12 @@ fn check_args(args: TokenStream) -> Result<(), Rejection> {
         match tokens.next() {
             None => break,
             Some(TokenTree::Punct(p)) if p.as_char() == ',' => {}
-            Some(other) => return Err((other.span(), "между аргументами ожидается запятая".to_owned())),
+            Some(other) => {
+                return Err((
+                    other.span(),
+                    "между аргументами ожидается запятая".to_owned(),
+                ))
+            }
         }
     }
 
@@ -133,7 +154,10 @@ fn string_value(lit: &Literal) -> Option<String> {
 fn compile_error(span: Span, message: &str) -> TokenStream {
     let mut text = Literal::string(message);
     text.set_span(span);
-    let mut args = Group::new(Delimiter::Parenthesis, TokenStream::from(TokenTree::Literal(text)));
+    let mut args = Group::new(
+        Delimiter::Parenthesis,
+        TokenStream::from(TokenTree::Literal(text)),
+    );
     args.set_span(span);
     [
         punct(':', Spacing::Joint, span),

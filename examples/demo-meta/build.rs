@@ -19,7 +19,11 @@ fn main() {
     };
 
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
-    fs::write(out_dir.join("registry.rs"), slipway_scan::emit_refs(&decisions)).unwrap();
+    fs::write(
+        out_dir.join("registry.rs"),
+        slipway_scan::emit_refs(&decisions),
+    )
+    .unwrap();
 
     // Разметка кода продукта: порождает константы, на которые ссылаются решения.
     let product_src = manifest.join("../demo-product/src");
@@ -30,13 +34,12 @@ fn main() {
             std::process::exit(1);
         }
     };
-    fs::write(out_dir.join("anchors.rs"), slipway_scan::anchors::emit_anchor_refs(&anchors)).unwrap();
+    fs::write(
+        out_dir.join("anchors.rs"),
+        slipway_scan::anchors::emit_anchor_refs(&anchors),
+    )
+    .unwrap();
 
     println!("cargo::rerun-if-changed=adr");
     println!("cargo::rerun-if-changed=../demo-product/src");
-    println!(
-        "cargo::warning=slipway: решений {}, размеченных фрагментов {}",
-        decisions.len(),
-        anchors.len()
-    );
 }

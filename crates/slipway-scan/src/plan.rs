@@ -65,7 +65,7 @@ pub fn emit_plan(entries: &[ScannedDecision], kind: &PlanKind) -> String {
 
     let _ = writeln!(
         out,
-        "\n#[allow(non_upper_case_globals)]\npub mod {} {{\n    use slipway_core::{};",
+        "\n#[allow(non_upper_case_globals, unused_imports)]\npub mod {} {{\n    use slipway_core::{};",
         kind.module, kind.reference
     );
     for e in entries {
@@ -89,7 +89,11 @@ pub fn emit_plan(entries: &[ScannedDecision], kind: &PlanKind) -> String {
         );
     }
 
-    let _ = writeln!(out, "\npub static {}: &[&slipway_work::{}] = &[", kind.all, kind.record);
+    let _ = writeln!(
+        out,
+        "\npub static {}: &[&slipway_work::{}] = &[",
+        kind.all, kind.record
+    );
     for e in entries {
         let _ = writeln!(out, "    &{}::{},", e.module, kind.item);
     }
@@ -100,7 +104,8 @@ pub fn emit_plan(entries: &[ScannedDecision], kind: &PlanKind) -> String {
 /// Утверждения «радиус работы не выше потолка среза». Порождаются после
 /// списков срезов и работ: ссылаются на `ALL_SLICES`.
 pub fn emit_work_checks(work: &[ScannedDecision]) -> String {
-    let mut out = String::from("// Радиус работы не выше потолка её среза — вычисляет компилятор.\n");
+    let mut out =
+        String::from("// Радиус работы не выше потолка её среза — вычисляет компилятор.\n");
     for w in work {
         let _ = writeln!(
             out,
@@ -152,8 +157,16 @@ mod tests {
             file: "/x/w0001.rs".into(),
         }];
         let code = emit_plan(&entries, &WORK);
-        assert!(code.contains("pub const w0001: WorkRef = WorkRef::__from_scan(1);"), "{code}");
-        assert!(code.contains("pub static ALL_WORK: &[&slipway_work::WorkItem]"), "{code}");
-        assert!(emit_work_checks(&entries).contains("radius_within_slice(&w0001::WORK, ALL_SLICES)"));
+        assert!(
+            code.contains("pub const w0001: WorkRef = WorkRef::__from_scan(1);"),
+            "{code}"
+        );
+        assert!(
+            code.contains("pub static ALL_WORK: &[&slipway_work::WorkItem]"),
+            "{code}"
+        );
+        assert!(
+            emit_work_checks(&entries).contains("radius_within_slice(&w0001::WORK, ALL_SLICES)")
+        );
     }
 }

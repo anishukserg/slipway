@@ -1,0 +1,8 @@
+# Тулчейн разработки Slipway (решение 8). Nightly нужен атакующим doctest:
+# коды ошибок в `compile_fail` rustdoc сверяет только на nightly. Потребителям
+# крейтов достаточно rust-version из Cargo.toml. Канал не закреплён датой,
+# поэтому воспроизводимость сборки между днями не гарантирована.
+[toolchain]
+channel = "nightly"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

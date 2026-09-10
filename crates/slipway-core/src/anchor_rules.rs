@@ -27,7 +27,9 @@ pub fn check_anchor_id(id: &str) -> Result<(), String> {
         ));
     }
     if KEYWORDS.contains(&anchor_ident(id).as_str()) {
-        return Err(format!("идентификатор разметки {id:?} совпадает с ключевым словом Rust"));
+        return Err(format!(
+            "идентификатор разметки {id:?} совпадает с ключевым словом Rust"
+        ));
     }
     Ok(())
 }
@@ -38,7 +40,9 @@ pub fn check_anchor_mode(mode: &str) -> Result<(), String> {
     if ANCHOR_MODES.contains(&mode) {
         Ok(())
     } else {
-        Err(format!("режим разметки {mode:?} неизвестен; допустимы ref, embed, snippet"))
+        Err(format!(
+            "режим разметки {mode:?} неизвестен; допустимы ref, embed, snippet"
+        ))
     }
 }
 
@@ -50,9 +54,9 @@ pub fn anchor_ident(id: &str) -> String {
 const KEYWORDS: &[&str] = &[
     "abstract", "as", "async", "await", "become", "box", "break", "const", "continue", "crate",
     "do", "dyn", "else", "enum", "extern", "false", "final", "fn", "for", "gen", "if", "impl",
-    "in", "let", "loop", "macro", "match", "mod", "move", "mut", "override", "priv", "pub",
-    "ref", "return", "self", "static", "struct", "super", "trait", "true", "try", "type",
-    "typeof", "unsafe", "unsized", "use", "virtual", "where", "while", "yield",
+    "in", "let", "loop", "macro", "match", "mod", "move", "mut", "override", "priv", "pub", "ref",
+    "return", "self", "static", "struct", "super", "trait", "true", "try", "type", "typeof",
+    "unsafe", "unsized", "use", "virtual", "where", "while", "yield",
 ];
 
 #[cfg(test)]

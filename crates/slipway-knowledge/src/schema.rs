@@ -65,9 +65,16 @@ mod tests {
 
     #[test]
     fn breaking_carries_its_migration() {
-        let b = Breaking::Yes { migration: nonempty_str!["перекодировать страницы"] };
+        let b = Breaking::Yes {
+            migration: nonempty_str!["перекодировать страницы"],
+        };
         assert!(b.is_breaking());
-        assert_eq!(b, Breaking::Yes { migration: nonempty_str!["перекодировать страницы"] });
+        assert_eq!(
+            b,
+            Breaking::Yes {
+                migration: nonempty_str!["перекодировать страницы"]
+            }
+        );
     }
 
     #[test]

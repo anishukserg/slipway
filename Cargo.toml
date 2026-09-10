@@ -8,6 +8,10 @@ edition = "2021"
 rust-version = "1.83"
 license = "MIT OR Apache-2.0"
 
+[workspace.lints.rust]
+# Небезопасный код в крейтах методологии невыразим, а не «проверяется ревью».
+unsafe_code = "forbid"
+
 [workspace.dependencies]
 slipway-core = { path = "crates/slipway-core" }
 slipway-knowledge = { path = "crates/slipway-knowledge" }

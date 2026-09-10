@@ -6,5 +6,8 @@ rust-version.workspace = true
 license.workspace = true
 description = "Демо-продукт: рабочий код с разметкой, на которую ссылаются решения"
 
+[lints]
+workspace = true
+
 [dependencies]
 slipway-derive = { path = "../../crates/slipway-derive" }
