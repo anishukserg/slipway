@@ -84,6 +84,32 @@ pub enum InquiryOutcome {
     Measurement,
 }
 
+/// Состояние единицы работы — свёртка журнала (инвариант 3, решение 15), а не
+/// поле записи: порождается при сборке реестра из событий.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkState {
+    /// Событий нет.
+    Planned,
+    /// Начата и не завершена.
+    Started,
+    /// Приземлена с доказательством на том же дереве.
+    Landed,
+    /// Приземлена до журнала: восстановлена из трейлеров истории.
+    LandedFromHistory,
+    /// Снята.
+    Abandoned,
+}
+
+impl WorkState {
+    /// После этого состояния событий у работы нет.
+    pub const fn is_finished(self) -> bool {
+        matches!(
+            self,
+            Self::Landed | Self::LandedFromHistory | Self::Abandoned
+        )
+    }
+}
+
 impl WorkOrigin {
     /// Приземляет ли работа код. Выводится из варианта, а не хранится.
     pub const fn lands_code(&self) -> bool {

@@ -17,6 +17,7 @@
 #![doc(test(attr(forbid(unstable_features))))]
 
 pub mod anchors;
+pub mod journal;
 pub mod plan;
 pub use anchors::{scan_anchors, AnchorMode, ScannedAnchor};
 

@@ -88,6 +88,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "slipway-journal"
+version = "0.1.0"
+
+[[package]]
 name = "slipway-knowledge"
 version = "0.1.0"
 dependencies = [
@@ -102,6 +106,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "slipway-core",
+ "slipway-journal",
  "syn",
 ]
 

@@ -1,0 +1,13 @@
+[package]
+name = "slipway-journal"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Slipway: журнал слоя работы — формат событий, автомат переходов, свёртка"
+
+[lints]
+workspace = true
+
+# Зависимостей нет: крейт подключают скан при сборке реестра и инструмент в
+# хуке, и автомат переходов у них один (решение 15).

@@ -1,5 +1,5 @@
 //! Скан документов Slipway: решения, спецификации, направления, срезы,
-//! единицы работы. Пишет только в OUT_DIR.
+//! единицы работы и журнал. Пишет только в OUT_DIR.
 //!
 //! Типы документов перечислены здесь явно. Отсутствующий каталог
 //! перечисленного типа — ошибка сборки, а не пустой реестр: опечатка в пути
@@ -28,7 +28,15 @@ fn main() {
     plan.push_str(&emit_work_checks(&work));
     fs::write(out.join("plan.rs"), plan).unwrap();
 
-    for dir in ["adr", "rfc", "thrust", "slice", "work"] {
+    // Журнал сворачивается при сборке (решение 15): нарушение автомата не
+    // собирается и называет файл события.
+    let journal = unwrap_scan(slipway_scan::journal::scan_journal(
+        &manifest.join("journal"),
+        &work,
+    ));
+    fs::write(out.join("journal.rs"), journal).unwrap();
+
+    for dir in ["adr", "rfc", "thrust", "slice", "work", "journal"] {
         println!("cargo::rerun-if-changed={dir}");
     }
 }

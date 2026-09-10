@@ -11,6 +11,7 @@ workspace = true
 
 [dependencies]
 slipway-core = { workspace = true }
+slipway-journal = { workspace = true }
 syn = { workspace = true }
 proc-macro2 = { workspace = true }
 quote = "1"
