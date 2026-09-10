@@ -1,0 +1,13 @@
+[package]
+name = "slipway-scan"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Slipway: скан реестра и порождение модулей констант для ссылок"
+
+[dependencies]
+slipway-core = { workspace = true }
+syn = { workspace = true }
+proc-macro2 = { workspace = true }
+quote = "1"

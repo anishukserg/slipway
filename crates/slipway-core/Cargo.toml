@@ -1,0 +1,9 @@
+[package]
+name = "slipway-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Slipway: общие типы и макросы — ссылочные newtype, NonEmpty, обратимость, таксономия"
+
+[dependencies]

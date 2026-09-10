@@ -1,0 +1,15 @@
+[package]
+name = "demo-meta"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Демо-реестр: показывает, что ссылка-путь резолвится компилятором"
+
+[dependencies]
+slipway-core = { workspace = true }
+slipway-knowledge = { workspace = true }
+chrono = { workspace = true }
+
+[build-dependencies]
+slipway-scan = { path = "../../crates/slipway-scan" }

@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# commit-msg по решению 8: форма сообщения и основание из плана в дереве коммита.
+set -euo pipefail
+exec bash "$(git rev-parse --show-toplevel)/tools/commit-msg-check.sh" "$1"

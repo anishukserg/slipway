@@ -1,0 +1,19 @@
+[workspace]
+resolver = "2"
+members = ["crates/*", "examples/demo-meta", "examples/demo-product"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.83"
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+slipway-core = { path = "crates/slipway-core" }
+slipway-knowledge = { path = "crates/slipway-knowledge" }
+slipway-work = { path = "crates/slipway-work" }
+slipway-meta = { path = "crates/slipway-meta" }
+slipway-scan = { path = "crates/slipway-scan" }
+syn = { version = "2", features = ["full", "extra-traits", "visit"] }
+proc-macro2 = { version = "1", features = ["span-locations"] }
+chrono = { version = "0.4.32", default-features = false, features = ["std"] }

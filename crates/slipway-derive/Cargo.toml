@@ -1,0 +1,13 @@
+[package]
+name = "slipway-derive"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Slipway: атрибут-маркер #[doc_anchor] для разметки кода"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+slipway-core = { workspace = true }

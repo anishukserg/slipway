@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# pre-commit по решению 8: калитка гоняется на дереве коммита, а не на рабочем
+# дереве. При частичном коммите это разные деревья, и проверка рабочего
+# подтвердила бы не то, что уходит в историю.
+set -euo pipefail
+
+repo=$(git rev-parse --show-toplevel)
+git_dir=$(git rev-parse --absolute-git-dir)
+work="$git_dir/slipway-gate"
+stage="$work/stage"
+tree="$work/tree"
+
+rm -rf "$stage"
+mkdir -p "$stage" "$tree"
+# GIT_INDEX_FILE, выставленный git для хука, указывает на индекс коммита
+# (при `commit --only` — временный), поэтому выгружается ровно дерево коммита.
+git checkout-index --all --prefix="$stage/"
+if command -v rsync > /dev/null; then
+  # Сверка по содержимому сохраняет время изменения неизменённых файлов,
+  # и сборка остаётся инкрементальной.
+  rsync -a --checksum --delete "$stage/" "$tree/"
+else
+  # Без rsync дерево заменяется целиком: проверка та же, сборка дольше.
+  rm -rf "$tree"
+  mv "$stage" "$tree"
+fi
+
+# Правила коммитов проверяются собственным самотестом, когда меняются сами.
+if git diff --cached --name-only | grep -qE '^(tools|\.githooks)/'; then
+  bash "$tree/tools/test-commit-rules.sh"
+  # Постусловие: самотест не повредил индекс коммита. Породивший отказ:
+  # переменные хука направили запись временного репозитория в этот индекс,
+  # и коммит упал на построении дерева уже после зелёных проверок.
+  if ! git write-tree > /dev/null; then
+    echo "pre-commit: индекс коммита повреждён после самотеста — коммит не создаётся" >&2
+    exit 1
+  fi
+fi
+
+# Калитка из дерева коммита, если она в нём есть: проверяет то, что коммитится.
+gate="$tree/tools/gate.sh"
+[[ -f $gate ]] || gate="$repo/tools/gate.sh"
+exec bash "$gate" "$tree"
