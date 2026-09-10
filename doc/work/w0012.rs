@@ -1,12 +1,12 @@
 use slipway_core::{taxon, BlastRadius, NonEmptyStr};
-use slipway_meta::taxonomy::Subsystem;
+use crate::taxonomy::Subsystem;
 use slipway_work::WorkOrigin;
 
 slipway_work::work!(12,
     title: NonEmptyStr::new("Шаг ссылок в markdown не выполнялся на дереве коммита"),
     slice: crate::slice::s0003,
     origin: WorkOrigin::Divergence {
-        specification: slipway_meta::rfc::r0002,
+        specification: crate::rfc::r0002,
         violated: NonEmptyStr::new(
             "Калитка на дереве коммита проверяет относительные ссылки в markdown (решение 8)."
         ),

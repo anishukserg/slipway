@@ -1,0 +1,26 @@
+[package]
+name = "slipway-doc"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Документы самого Slipway: решения, спецификации и план, записанные по его же методологии"
+# Документы проекта, а не библиотека: не публикуются (решение 11).
+publish = false
+
+# Документы лежат в корне крейта, без каталога src (решение 10); все их типы —
+# в одном крейте в каталоге doc/ (решение 11).
+[lib]
+path = "lib.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+slipway-core = { workspace = true }
+slipway-knowledge = { workspace = true }
+slipway-work = { workspace = true }
+chrono = { workspace = true }
+
+[build-dependencies]
+slipway-scan = { workspace = true }

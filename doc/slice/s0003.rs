@@ -6,6 +6,6 @@ slipway_work::slice!(3,
     outcome: NonEmptyStr::new(
         "Коммит проходит только с формой сообщения и основанием из плана, калитка гоняется на дереве коммита, строка с именем внешнего проекта отвергается; каталога spec/ в дереве нет."
     ),
-    specification: slipway_meta::rfc::r0002,
+    specification: crate::rfc::r0002,
     max_radius: BlastRadius::Crate,
 );

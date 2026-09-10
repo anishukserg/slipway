@@ -1,5 +1,5 @@
 use slipway_core::{taxon, BlastRadius, NonEmptyStr};
-use slipway_meta::taxonomy::Subsystem;
+use crate::taxonomy::Subsystem;
 use slipway_work::{InquiryOutcome, WorkOrigin};
 use std::num::NonZeroU16;
 

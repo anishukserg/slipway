@@ -1,5 +1,5 @@
 use slipway_core::{taxon, BlastRadius, NonEmptyStr};
-use slipway_meta::taxonomy::Subsystem;
+use crate::taxonomy::Subsystem;
 use slipway_work::WorkOrigin;
 
 slipway_work::work!(7,

@@ -18,7 +18,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "demo-meta"
+name = "demo-doc"
 version = "0.1.0"
 dependencies = [
  "chrono",
@@ -73,31 +73,22 @@ dependencies = [
 ]
 
 [[package]]
-name = "slipway-knowledge"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "slipway-core",
-]
-
-[[package]]
-name = "slipway-meta"
+name = "slipway-doc"
 version = "0.1.0"
 dependencies = [
  "chrono",
  "slipway-core",
  "slipway-knowledge",
  "slipway-scan",
+ "slipway-work",
 ]
 
 [[package]]
-name = "slipway-plan"
+name = "slipway-knowledge"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "slipway-core",
- "slipway-meta",
- "slipway-scan",
- "slipway-work",
 ]
 
 [[package]]

@@ -1,5 +1,5 @@
 use slipway_core::{taxon, BlastRadius, NonEmptyStr};
-use slipway_meta::taxonomy::Subsystem;
+use crate::taxonomy::Subsystem;
 use slipway_work::WorkOrigin;
 
 slipway_work::work!(1,
@@ -8,7 +8,7 @@ slipway_work::work!(1,
     ),
     slice: crate::slice::s0001,
     origin: WorkOrigin::Divergence {
-        specification: slipway_meta::rfc::r0001,
+        specification: crate::rfc::r0001,
         violated: NonEmptyStr::new("Ссылка на живое решение из позиции «замещённое» не компилируется."),
     },
     taxon: taxon!(Subsystem, Knowledge),

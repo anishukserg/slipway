@@ -26,12 +26,11 @@ checks=0
 fail() { echo "SELFTEST FAIL: $1"; exit 1; }
 
 repo="$tmp/repo"
-mkdir -p "$repo/tools" "$repo/hooks" "$repo/crates/slipway-meta" \
-  "$repo/crates/slipway-plan/work" "$repo/old"
+mkdir -p "$repo/tools" "$repo/hooks" "$repo/doc/work" "$repo/old"
 cp "$here/commit-msg-check.sh" "$here/commit.sh" "$here/gate.sh" "$repo/tools/"
 printf 'slipway_core::declare_taxonomy! {\n    Subsystem => [Knowledge, Cli],\n}\n' \
-  > "$repo/crates/slipway-meta/taxonomy.rs"
-echo 'work' > "$repo/crates/slipway-plan/work/w0001.rs"
+  > "$repo/doc/taxonomy.rs"
+echo 'work' > "$repo/doc/work/w0001.rs"
 echo 'old' > "$repo/old/file.txt"
 echo 'unrelated' > "$repo/unrelated.txt"
 # Во временном репозитории подключена только проверка сообщения: калитка
@@ -78,7 +77,7 @@ attempt 4 "точка в конце темы" $'[FEAT](cli): новый файл
 attempt 4 "без основания" '[FEAT](cli): новый файл' new.txt
 attempt 4 "основание вне плана" $'[FEAT](cli): новый файл\n\nSlipway-Work: w0099' new.txt
 attempt 2 "без путей" "$ok"
-attempt 1 "нечего коммитить" "$ok" crates
+attempt 1 "нечего коммитить" "$ok" doc
 
 echo 'changed' >> "$repo/unrelated.txt"
 rm -r "$repo/old"

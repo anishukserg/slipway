@@ -12,8 +12,8 @@
 set -uo pipefail
 if locale -a 2>/dev/null | grep -qiE '^c\.utf-?8$'; then export LC_ALL=C.UTF-8; fi
 
-taxonomy_path="crates/slipway-meta/taxonomy.rs"
-work_dir="crates/slipway-plan/work"
+taxonomy_path="doc/taxonomy.rs"
+work_dir="doc/work"
 
 form_only=""
 if [[ ${1:-} == --form-only ]]; then form_only=1; shift; fi
@@ -24,7 +24,7 @@ if [[ -z $msg_file || ! -r $msg_file ]]; then
 fi
 
 types="FEAT FIX REFACTOR TEST DOCS ADR PLAN CHORE"
-rule="правила коммитов — решение 8, crates/slipway-meta/adr/a0008.rs"
+rule="правила коммитов — решение 8, doc/adr/a0008.rs"
 errors=()
 
 # Области — значения оси подсистем из таксономии в индексе.

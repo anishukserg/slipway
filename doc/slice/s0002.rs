@@ -6,6 +6,6 @@ slipway_work::slice!(2,
     outcome: NonEmptyStr::new(
         "План Slipway записан направлениями, срезами и единицами работы; ссылка на несуществующее решение, спецификацию или срез не компилируется; радиус работы выше потолка среза не компилируется."
     ),
-    specification: slipway_meta::rfc::r0002,
+    specification: crate::rfc::r0002,
     max_radius: BlastRadius::Crate,
 );

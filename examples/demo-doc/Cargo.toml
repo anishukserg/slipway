@@ -1,10 +1,11 @@
 [package]
-name = "demo-meta"
+name = "demo-doc"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 description = "Демо-реестр: показывает, что ссылка-путь резолвится компилятором"
+publish = false
 
 # Раскладка реестра, которую методология предлагает продуктам: документы
 # в корне крейта, без каталога src (решение 10).
@@ -20,4 +21,4 @@ slipway-knowledge = { workspace = true }
 chrono = { workspace = true }
 
 [build-dependencies]
-slipway-scan = { path = "../../crates/slipway-scan" }
+slipway-scan = { workspace = true }

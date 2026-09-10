@@ -1,11 +1,11 @@
 use slipway_core::{taxon, BlastRadius, NonEmptyStr};
-use slipway_meta::taxonomy::Subsystem;
+use crate::taxonomy::Subsystem;
 use slipway_work::WorkOrigin;
 
 slipway_work::work!(8,
     title: NonEmptyStr::new("Правила коммитов: проверка сообщения, калитка на дереве коммита, обёртка коммита"),
     slice: crate::slice::s0003,
-    origin: WorkOrigin::Decision(slipway_meta::adr::a0008),
+    origin: WorkOrigin::Decision(crate::adr::a0008),
     taxon: taxon!(Subsystem, Cli),
     radius: BlastRadius::Local,
     outcome: NonEmptyStr::new(
