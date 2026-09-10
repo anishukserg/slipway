@@ -1,0 +1,6 @@
+event = "landed"
+work = "w0005"
+at = "2026-09-10T20:02:25Z"
+commit = "a43276a522fc492a8854021c7afa1e3222f767ec"
+tree = "fcacd1e044cc183a101cf8928d80163f3040450e"
+evidence = "history"
