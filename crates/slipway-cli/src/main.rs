@@ -7,6 +7,8 @@
 //! cargo slipway gate [--repo <каталог>] [--journal-only] [<дерево>]
 //! cargo slipway hook pre-commit | commit-msg <сообщение> | pre-push <удалённый> <адрес>
 //! cargo slipway hooks install
+//! cargo slipway work start | land | drop | state …
+//! cargo slipway slice close <sNNNN>
 //! cargo slipway journal hash [<ревизия>]
 //! ```
 //!
@@ -26,6 +28,7 @@ mod journal;
 mod layout;
 mod message;
 mod proof;
+mod work;
 
 use std::ffi::OsString;
 use std::process::ExitCode;
@@ -37,7 +40,12 @@ const USAGE: &str = "cargo slipway — правила коммитов и жур
   cargo slipway gate [--repo <каталог>] [--journal-only] [<дерево>]
   cargo slipway hook pre-commit | commit-msg <сообщение> | pre-push <удалённый> <адрес>
   cargo slipway hooks install
-  cargo slipway journal hash [<ревизия>]";
+  cargo slipway work start <wNNNN> | land <wNNNN> [--commit <ревизия>] | drop <wNNNN> --reason <причина> | state [<wNNNN>]
+  cargo slipway slice close <sNNNN>
+  cargo slipway journal hash [<ревизия>]
+
+  Команды work и slice принимают --trailer <трейлер> для дополнительных строк
+  трейлеров сообщения коммита.";
 
 fn main() -> ExitCode {
     let mut args: Vec<OsString> = std::env::args_os().skip(1).collect();
@@ -56,6 +64,8 @@ fn main() -> ExitCode {
         "gate" => gate::run(rest),
         "hook" => hooks::run(rest),
         "hooks" => hooks::install(rest),
+        "work" => work::run_work(rest),
+        "slice" => work::run_slice(rest),
         "journal" => journal::run(rest),
         "help" | "--help" | "-h" => {
             println!("{USAGE}");

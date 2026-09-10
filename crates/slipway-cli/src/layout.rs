@@ -9,6 +9,9 @@ pub const TAXONOMY: &str = "doc/taxonomy.rs";
 /// Каталог единиц работы: основание коммита обязано лежать здесь.
 pub const WORK_DIR: &str = "doc/work";
 
+/// Каталог срезов: основание коммита закрытия среза (решение 15).
+pub const SLICE_DIR: &str = "doc/slice";
+
 /// Каталог журнала работы (решение 15).
 pub const JOURNAL_DIR: &str = "doc/journal";
 
@@ -20,6 +23,9 @@ pub const COMMIT_RULES: &str = "правила коммитов — решени
 
 /// Блокировка коммита в каталоге git.
 pub const COMMIT_LOCK: &str = "slipway-commit.lock";
+
+/// Сообщение коммита события журнала, в каталоге git.
+pub const JOURNAL_MESSAGE: &str = "slipway-journal-message";
 
 /// Корневой манифест: рабочее пространство и `rust-version`.
 pub const MANIFEST: &str = "Cargo.toml";

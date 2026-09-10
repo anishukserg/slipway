@@ -1,8 +1,9 @@
 //! Свёртка журнала: стадия каждой работы, закрытые срезы и нарушения автомата.
 //!
-//! События упорядочиваются по времени, при равенстве — по имени файла.
-//! Нарушающее событие не меняет стадию: следующее событие проверяется против
-//! последнего законного.
+//! События упорядочиваются по времени; при равном времени — по порядку
+//! автомата (начало, проверка, завершение, закрытие среза), затем по имени
+//! файла. Нарушающее событие не меняет стадию: следующее событие проверяется
+//! против последнего законного.
 
 use crate::event::{Event, Evidence, Kind, Subject};
 use std::collections::BTreeMap;
@@ -62,7 +63,13 @@ pub struct Violation {
 /// Сворачивает события в состояние и перечисляет нарушения автомата.
 pub fn fold(events: &[Event]) -> (Journal, Vec<Violation>) {
     let mut ordered: Vec<&Event> = events.iter().collect();
-    ordered.sort_by(|a, b| a.at.cmp(&b.at).then_with(|| a.file.cmp(&b.file)));
+    ordered.sort_by(|a, b| {
+        (a.at.as_str(), rank(&a.kind), a.file.as_str()).cmp(&(
+            b.at.as_str(),
+            rank(&b.kind),
+            b.file.as_str(),
+        ))
+    });
     let mut journal = Journal::default();
     let mut violations = Vec::new();
     for event in ordered {
@@ -78,6 +85,18 @@ pub fn fold(events: &[Event]) -> (Journal, Vec<Violation>) {
         }
     }
     (journal, violations)
+}
+
+/// Порядок вида события внутри одной секунды — порядок автомата. Иначе события
+/// одной секунды упорядочились бы по имени файла, и проверка шла бы раньше
+/// начала.
+fn rank(kind: &Kind) -> u8 {
+    match kind {
+        Kind::Started => 0,
+        Kind::Gate { .. } => 1,
+        Kind::Landed { .. } | Kind::Abandoned { .. } => 2,
+        Kind::Closed => 3,
+    }
 }
 
 fn close_slice(journal: &mut Journal, slice: u32, event: &Event) -> Result<(), String> {

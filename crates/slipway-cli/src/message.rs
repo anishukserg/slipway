@@ -1,15 +1,15 @@
 //! Сообщение коммита по решению 8: тема `[ТИП](область): суть`, пустая строка
-//! после темы, трейлер `Slipway-Work: wNNNN` с единицей работы из дерева
-//! коммита.
+//! после темы, трейлер основания из дерева коммита — `Slipway-Work: wNNNN` или,
+//! для коммита закрытия среза, `Slipway-Slice: sNNNN` (решение 15).
 //!
 //! ```text
 //! cargo slipway msg-check [--form-only] <файл сообщения>
 //! ```
 //!
-//! Без `--form-only` проверяется ещё и то, что каждая работа из трейлера есть в
-//! индексе — в дереве будущего коммита. Хук commit-msg вызывает полный вариант,
-//! команда commit — только форму и до блокировки, чтобы ошибка в теме не стоила
-//! прогона калитки.
+//! Без `--form-only` проверяется ещё и то, что каждая работа и каждый срез из
+//! трейлеров есть в индексе — в дереве будущего коммита. Хук commit-msg
+//! вызывает полный вариант, команда commit — только форму и до блокировки,
+//! чтобы ошибка в теме не стоила прогона калитки.
 //!
 //! Код возврата: 0 — принято; 1 — отвергнуто (причины в stderr); 2 — ошибка
 //! запуска.
@@ -26,8 +26,11 @@ pub const TYPES: [&str; 8] = [
 /// Предел длины темы в символах.
 const SUBJECT_LIMIT: usize = 72;
 
-/// Ключ трейлера основания.
-const TRAILER: &str = "Slipway-Work:";
+/// Ключ трейлера основания — единица работы.
+const WORK_TRAILER: &str = "Slipway-Work:";
+
+/// Ключ трейлера основания — срез, для коммита его закрытия.
+const SLICE_TRAILER: &str = "Slipway-Slice:";
 
 /// `cargo slipway msg-check`.
 pub fn run(args: &[OsString]) -> u8 {
@@ -57,7 +60,7 @@ pub fn run(args: &[OsString]) -> u8 {
 }
 
 /// Проверяет сообщение по индексу репозитория в `dir`: области — из таксономии
-/// в индексе, работы — из индекса. `Err` — проверку не из чего выполнить.
+/// в индексе, основания — из индекса. `Err` — проверку не из чего выполнить.
 pub fn check_in_index(dir: &Path, text: &str, form_only: bool) -> Result<Vec<String>, String> {
     let taxonomy = format!(":{}", layout::TAXONOMY);
     let scopes = git::read(dir, &["show", &taxonomy])
@@ -69,16 +72,12 @@ pub fn check_in_index(dir: &Path, text: &str, form_only: bool) -> Result<Vec<Str
             layout::TAXONOMY
         ));
     }
-    let work_in_index = |work: &str| {
-        let spec = format!(":{}/{work}.rs", layout::WORK_DIR);
+    let in_index = |path: &str| {
+        let spec = format!(":{path}");
         git::succeeds(dir, &["cat-file", "-e", &spec])
     };
-    let work_exists: Option<&dyn Fn(&str) -> bool> = if form_only {
-        None
-    } else {
-        Some(&work_in_index)
-    };
-    Ok(problems(text, &scopes, work_exists))
+    let exists: Option<&dyn Fn(&str) -> bool> = if form_only { None } else { Some(&in_index) };
+    Ok(problems(text, &scopes, exists))
 }
 
 /// Текст отказа: ссылка на правило и причины по одной в строке.
@@ -123,12 +122,12 @@ pub fn subsystem_scopes(taxonomy: &str) -> Vec<String> {
 
 /// Причины отказа сообщения; пустой список — сообщение принято.
 ///
-/// `work_exists` отвечает, есть ли единица работы в дереве коммита; без неё
-/// проверяется только форма.
+/// `exists` отвечает, есть ли файл плана — работы или среза — в дереве
+/// коммита; без неё проверяется только форма.
 pub fn problems(
     text: &str,
     scopes: &[String],
-    work_exists: Option<&dyn Fn(&str) -> bool>,
+    exists: Option<&dyn Fn(&str) -> bool>,
 ) -> Vec<String> {
     let mut errors = Vec::new();
     let lines: Vec<&str> = text.lines().filter(|line| !line.starts_with('#')).collect();
@@ -164,28 +163,51 @@ pub fn problems(
         errors.push("после темы нужна пустая строка".to_owned());
     }
 
-    let trailers: Vec<&str> = text
-        .lines()
-        .filter(|line| line.starts_with(TRAILER))
-        .collect();
-    if trailers.iter().any(|line| work_id(line).is_none()) {
-        errors.push("трейлер Slipway-Work не по форме wNNNN".to_owned());
-    }
-    let works: Vec<&str> = trailers.iter().filter_map(|line| work_id(line)).collect();
-    if works.is_empty() {
-        errors
-            .push("нет трейлера Slipway-Work: wNNNN — у коммита нет основания в плане".to_owned());
-    } else if let Some(exists) = work_exists {
+    let works = trailer_ids(text, WORK_TRAILER, 'w', &mut errors);
+    let slices = trailer_ids(text, SLICE_TRAILER, 's', &mut errors);
+    if works.is_empty() && slices.is_empty() {
+        errors.push(
+            "нет трейлера Slipway-Work: wNNNN или Slipway-Slice: sNNNN — у коммита нет основания в плане"
+                .to_owned(),
+        );
+    } else if let Some(exists) = exists {
         for work in works {
-            if !exists(work) {
+            let path = format!("{}/{work}.rs", layout::WORK_DIR);
+            if !exists(&path) {
                 errors.push(format!(
-                    "единицы работы {work} нет в дереве коммита ({}/{work}.rs)",
-                    layout::WORK_DIR
+                    "единицы работы {work} нет в дереве коммита ({path})"
                 ));
+            }
+        }
+        for slice in slices {
+            let path = format!("{}/{slice}.rs", layout::SLICE_DIR);
+            if !exists(&path) {
+                errors.push(format!("среза {slice} нет в дереве коммита ({path})"));
             }
         }
     }
     errors
+}
+
+/// Идентификаторы из трейлеров `key`; трейлер не по форме добавляет причину.
+fn trailer_ids<'a>(
+    text: &'a str,
+    key: &str,
+    prefix: char,
+    errors: &mut Vec<String>,
+) -> Vec<&'a str> {
+    let lines: Vec<&str> = text.lines().filter(|line| line.starts_with(key)).collect();
+    if lines
+        .iter()
+        .any(|line| trailer_id(line, key, prefix).is_none())
+    {
+        let name = key.trim_end_matches(':');
+        errors.push(format!("трейлер {name} не по форме {prefix}NNNN"));
+    }
+    lines
+        .iter()
+        .filter_map(|line| trailer_id(line, key, prefix))
+        .collect()
 }
 
 /// Тип, области и суть темы `[ТИП](область): суть`; `None` — тема не по форме.
@@ -207,10 +229,10 @@ fn parse_subject(subject: &str) -> Option<(&str, &str, &str)> {
     Some((kind, scopes, summary))
 }
 
-/// Идентификатор работы из строки трейлера — ровно `Slipway-Work: wNNNN`.
-fn work_id(line: &str) -> Option<&str> {
-    let id = line.strip_prefix(TRAILER)?.strip_prefix(' ')?;
-    let digits = id.strip_prefix('w')?;
+/// Идентификатор из строки трейлера — ровно `<ключ> <префикс>NNNN`.
+fn trailer_id<'a>(line: &'a str, key: &str, prefix: char) -> Option<&'a str> {
+    let id = line.strip_prefix(key)?.strip_prefix(' ')?;
+    let digits = id.strip_prefix(prefix)?;
     (digits.len() == 4 && digits.bytes().all(|b| b.is_ascii_digit())).then_some(id)
 }
 
@@ -222,8 +244,8 @@ mod tests {
         vec!["knowledge".to_owned(), "cli".to_owned()]
     }
 
-    fn planned(work: &str) -> bool {
-        work == "w0001"
+    fn planned(path: &str) -> bool {
+        path == "doc/work/w0001.rs" || path == "doc/slice/s0001.rs"
     }
 
     #[test]
@@ -234,12 +256,17 @@ mod tests {
     }
 
     #[test]
-    fn well_formed_message_passes() {
-        let message = "[FEAT](cli,knowledge): суть\n\nтело\n\nSlipway-Work: w0001\n";
-        assert_eq!(
-            problems(message, &scopes(), Some(&planned)),
-            Vec::<String>::new()
-        );
+    fn well_formed_messages_pass() {
+        for message in [
+            "[FEAT](cli,knowledge): суть\n\nтело\n\nSlipway-Work: w0001\n",
+            "[PLAN](cli): закрыт срез s0001\n\nSlipway-Slice: s0001\n",
+        ] {
+            assert_eq!(
+                problems(message, &scopes(), Some(&planned)),
+                Vec::<String>::new(),
+                "{message}"
+            );
+        }
     }
 
     #[test]
@@ -275,6 +302,14 @@ mod tests {
             (
                 "[FEAT](cli): суть\n\nSlipway-Work: w0099",
                 "единицы работы w0099",
+            ),
+            (
+                "[PLAN](cli): закрыт срез\n\nSlipway-Slice: 7",
+                "Slipway-Slice не по форме sNNNN",
+            ),
+            (
+                "[PLAN](cli): закрыт срез\n\nSlipway-Slice: s0099",
+                "среза s0099",
             ),
         ];
         for (message, expected) in cases {

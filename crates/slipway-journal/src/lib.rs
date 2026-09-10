@@ -77,3 +77,42 @@ fn collect(root: &Path, dir: &Path, files: &mut Vec<(String, PathBuf)>) -> io::R
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const TREE: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+    /// События одной секунды упорядочиваются автоматом, а не именем файла:
+    /// по алфавиту `gate` раньше `started`, и проверка шла бы до начала.
+    #[test]
+    fn same_second_events_follow_the_automaton() {
+        let at = "2026-09-11T10:00:00Z".to_owned();
+        let work = Subject::Work(22);
+        let events = [
+            Event::new(
+                work,
+                at.clone(),
+                Kind::Landed {
+                    commit: TREE.into(),
+                    tree: TREE.into(),
+                    evidence: Evidence::Gate,
+                },
+            ),
+            Event::new(
+                work,
+                at.clone(),
+                Kind::Gate {
+                    gate: "commit".into(),
+                    tree: TREE.into(),
+                    verdict: "GATE OK".into(),
+                },
+            ),
+            Event::new(work, at, Kind::Started),
+        ];
+        let (journal, violations) = fold(&events);
+        assert!(violations.is_empty(), "{violations:?}");
+        assert_eq!(journal.stage(22), Stage::Landed);
+    }
+}
