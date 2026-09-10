@@ -99,7 +99,10 @@ while IFS= read -r md; do
     path=${link%%#*}
     [[ -z $path || -e $dir/$path ]] || broken+=("${md#"$tree"/}: $link")
   done < <(grep -oE '\]\([^)[:space:]]+\)' "$md" | sed -E 's/^\]\((.*)\)$/\1/' | grep -vE '^(https?:|mailto:|#)')
-done < <(find "$tree" -name '*.md' -not -path '*/target/*' -not -path '*/.git/*')
+# Каталоги отсекаются по имени внутри дерева, а не по подстроке пути: дерево
+# коммита выгружается внутрь каталога git, и исключение «*/.git/*» отсекало
+# все его файлы — шаг молча оставался без предмета.
+done < <(find "$tree" \( -name target -o -name .git \) -prune -o -name '*.md' -print)
 if (( ${#broken[@]} )); then
   printf '  битая ссылка: %s\n' "${broken[@]}"
   fail "относительные ссылки в markdown"

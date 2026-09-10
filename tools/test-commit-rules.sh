@@ -114,6 +114,22 @@ checks=$((checks + 1))
 [[ $(tail -n 1 <<< "$output") == "GATE FAIL: в дереве нет Cargo.toml"* ]] \
   || fail "калитка запустила сборку без манифеста в дереве: «$(tail -n 1 <<< "$output")»"
 
+# Ссылки в markdown: битая относительная ссылка отвергается. Временный
+# репозиторий лежит внутри каталога git, как и выгруженное дерево коммита,
+# поэтому проверка ловит и исключения путей, срабатывающие на весь каталог.
+printf '# Документ\n\nСм. [файл](missing.md).\n' > "$repo/doc.md"
+output=$(cd "$repo" && bash tools/gate.sh 2>&1)
+checks=$((checks + 1))
+[[ $(tail -n 1 <<< "$output") == "GATE FAIL: относительные ссылки в markdown"* ]] \
+  || fail "калитка пропустила битую ссылку в markdown: «$(tail -n 1 <<< "$output")»"
+# Контроль: ссылка на существующий файл проходит этот шаг.
+printf '# Документ\n\nСм. [файл](unrelated.txt).\n' > "$repo/doc.md"
+output=$(cd "$repo" && bash tools/gate.sh 2>&1)
+checks=$((checks + 1))
+[[ $(tail -n 1 <<< "$output") == "GATE FAIL: в дереве нет Cargo.toml"* ]] \
+  || fail "калитка отвергла корректную ссылку в markdown: «$(tail -n 1 <<< "$output")»"
+rm "$repo/doc.md"
+
 # Публикация: pre-push не выпускает историю со следом внешнего имени и ветки
 # архива, а чистую историю выпускает.
 pre_push="$here/../.githooks/pre-push"
