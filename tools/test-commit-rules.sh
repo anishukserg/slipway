@@ -26,12 +26,12 @@ checks=0
 fail() { echo "SELFTEST FAIL: $1"; exit 1; }
 
 repo="$tmp/repo"
-mkdir -p "$repo/tools" "$repo/hooks" "$repo/crates/slipway-meta/src" \
-  "$repo/crates/slipway-plan/src/work" "$repo/old"
+mkdir -p "$repo/tools" "$repo/hooks" "$repo/crates/slipway-meta" \
+  "$repo/crates/slipway-plan/work" "$repo/old"
 cp "$here/commit-msg-check.sh" "$here/commit.sh" "$here/gate.sh" "$repo/tools/"
 printf 'slipway_core::declare_taxonomy! {\n    Subsystem => [Knowledge, Cli],\n}\n' \
-  > "$repo/crates/slipway-meta/src/taxonomy.rs"
-echo 'work' > "$repo/crates/slipway-plan/src/work/w0001.rs"
+  > "$repo/crates/slipway-meta/taxonomy.rs"
+echo 'work' > "$repo/crates/slipway-plan/work/w0001.rs"
 echo 'old' > "$repo/old/file.txt"
 echo 'unrelated' > "$repo/unrelated.txt"
 # Во временном репозитории подключена только проверка сообщения: калитка

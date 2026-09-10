@@ -6,6 +6,11 @@ rust-version.workspace = true
 license.workspace = true
 description = "Демо-реестр: показывает, что ссылка-путь резолвится компилятором"
 
+# Раскладка реестра, которую методология предлагает продуктам: документы
+# в корне крейта, без каталога src (решение 10).
+[lib]
+path = "lib.rs"
+
 [dependencies]
 slipway-core = { workspace = true }
 slipway-knowledge = { workspace = true }

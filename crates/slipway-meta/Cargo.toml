@@ -6,6 +6,10 @@ rust-version.workspace = true
 license.workspace = true
 description = "Реестр решений и спецификаций самого Slipway: методология, применённая к себе"
 
+# Документы реестра лежат в корне крейта, без каталога src (решение 10).
+[lib]
+path = "lib.rs"
+
 [dependencies]
 slipway-core = { workspace = true }
 slipway-knowledge = { workspace = true }

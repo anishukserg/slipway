@@ -14,9 +14,9 @@ fn main() {
             std::process::exit(1);
         }
     };
-    let thrusts = scan("src/thrust", &THRUSTS);
-    let slices = scan("src/slice", &SLICES);
-    let work = scan("src/work", &WORK);
+    let thrusts = scan("thrust", &THRUSTS);
+    let slices = scan("slice", &SLICES);
+    let work = scan("work", &WORK);
 
     let mut code = emit_plan(&thrusts, &THRUSTS);
     code.push_str(&emit_plan(&slices, &SLICES));
@@ -24,7 +24,7 @@ fn main() {
     code.push_str(&emit_work_checks(&work));
     fs::write(out.join("plan.rs"), code).unwrap();
 
-    for dir in ["src/thrust", "src/slice", "src/work"] {
+    for dir in ["thrust", "slice", "work"] {
         println!("cargo::rerun-if-changed={dir}");
     }
 }

@@ -12,6 +12,9 @@
 set -uo pipefail
 if locale -a 2>/dev/null | grep -qiE '^c\.utf-?8$'; then export LC_ALL=C.UTF-8; fi
 
+taxonomy_path="crates/slipway-meta/taxonomy.rs"
+work_dir="crates/slipway-plan/work"
+
 form_only=""
 if [[ ${1:-} == --form-only ]]; then form_only=1; shift; fi
 msg_file=${1:-}
@@ -21,15 +24,15 @@ if [[ -z $msg_file || ! -r $msg_file ]]; then
 fi
 
 types="FEAT FIX REFACTOR TEST DOCS ADR PLAN CHORE"
-rule="правила коммитов — решение 8, crates/slipway-meta/src/adr/a0008.rs"
+rule="правила коммитов — решение 8, crates/slipway-meta/adr/a0008.rs"
 errors=()
 
 # Области — значения оси подсистем из таксономии в индексе.
-scopes=$(git show :crates/slipway-meta/src/taxonomy.rs 2>/dev/null \
+scopes=$(git show ":$taxonomy_path" 2>/dev/null \
   | sed -n 's/.*Subsystem *=> *\[\([^]]*\)\].*/\1/p' \
   | tr ',' '\n' | tr -d ' ' | tr '[:upper:]' '[:lower:]' | grep -v '^$')
 if [[ -z $scopes ]]; then
-  echo "commit-msg-check: в индексе нет значений оси Subsystem (crates/slipway-meta/src/taxonomy.rs)" >&2
+  echo "commit-msg-check: в индексе нет значений оси Subsystem ($taxonomy_path)" >&2
   exit 2
 fi
 
@@ -72,8 +75,8 @@ if (( ${#works[@]} == 0 )); then
   errors+=("нет трейлера Slipway-Work: wNNNN — у коммита нет основания в плане")
 elif [[ -z $form_only ]]; then
   for work in "${works[@]}"; do
-    if ! git cat-file -e ":crates/slipway-plan/src/work/$work.rs" 2>/dev/null; then
-      errors+=("единицы работы $work нет в дереве коммита (crates/slipway-plan/src/work/$work.rs)")
+    if ! git cat-file -e ":$work_dir/$work.rs" 2>/dev/null; then
+      errors+=("единицы работы $work нет в дереве коммита ($work_dir/$work.rs)")
     fi
   done
 fi

@@ -1,13 +1,14 @@
 //! Скан реестра решений и порождение модуля констант в OUT_DIR.
 //!
-//! Пишет ТОЛЬКО в OUT_DIR: запись в src/ ломала бы `cargo package --locked`
-//! и обновляла бы mtime собственного триггера перезапуска.
+//! Пишет ТОЛЬКО в OUT_DIR: запись в каталог крейта ломала бы
+//! `cargo package --locked` и обновляла бы mtime собственного триггера
+//! перезапуска.
 
 use std::{env, fs, path::PathBuf};
 
 fn main() {
     let manifest = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
-    let adr_dir = manifest.join("src/adr");
+    let adr_dir = manifest.join("adr");
 
     let decisions = match slipway_scan::scan_decisions(&adr_dir) {
         Ok(d) => d,
@@ -31,7 +32,7 @@ fn main() {
     };
     fs::write(out_dir.join("anchors.rs"), slipway_scan::anchors::emit_anchor_refs(&anchors)).unwrap();
 
-    println!("cargo::rerun-if-changed=src/adr");
+    println!("cargo::rerun-if-changed=adr");
     println!("cargo::rerun-if-changed=../demo-product/src");
     println!(
         "cargo::warning=slipway: решений {}, размеченных фрагментов {}",

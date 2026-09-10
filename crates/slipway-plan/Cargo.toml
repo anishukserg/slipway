@@ -6,6 +6,10 @@ rust-version.workspace = true
 license.workspace = true
 description = "План работ самого Slipway, записанный по его же методологии"
 
+# Документы плана лежат в корне крейта, без каталога src (решение 10).
+[lib]
+path = "lib.rs"
+
 [dependencies]
 slipway-core = { workspace = true }
 slipway-work = { workspace = true }
