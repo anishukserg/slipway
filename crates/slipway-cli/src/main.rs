@@ -3,6 +3,7 @@
 //! ```text
 //! cargo slipway commit -F <сообщение> [--log <файл>] [--timeout <сек>] -- <пути…>
 //! cargo slipway msg-check [--form-only] <сообщение>
+//! cargo slipway gate [--repo <каталог>] [<дерево>]
 //! ```
 //!
 //! Инструмент опирается на соглашения, а не на настройку: пути собраны в
@@ -14,6 +15,7 @@
 #![doc(test(attr(forbid(unstable_features))))]
 
 mod commit;
+mod gate;
 mod git;
 mod layout;
 mod message;
@@ -24,7 +26,8 @@ use std::process::ExitCode;
 const USAGE: &str = "cargo slipway — правила коммитов Slipway (решения 8 и 14)
 
   cargo slipway commit -F <сообщение> [--log <файл>] [--timeout <сек>] -- <пути…>
-  cargo slipway msg-check [--form-only] <сообщение>";
+  cargo slipway msg-check [--form-only] <сообщение>
+  cargo slipway gate [--repo <каталог>] [<дерево>]";
 
 fn main() -> ExitCode {
     let mut args: Vec<OsString> = std::env::args_os().skip(1).collect();
@@ -40,6 +43,7 @@ fn main() -> ExitCode {
     let code = match command.as_str() {
         "commit" => commit::run(rest),
         "msg-check" => message::run(rest),
+        "gate" => gate::run(rest),
         "help" | "--help" | "-h" => {
             println!("{USAGE}");
             0

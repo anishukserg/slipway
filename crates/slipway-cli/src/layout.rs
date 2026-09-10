@@ -14,3 +14,17 @@ pub const COMMIT_RULES: &str = "правила коммитов — решени
 
 /// Блокировка коммита в каталоге git.
 pub const COMMIT_LOCK: &str = "slipway-commit.lock";
+
+/// Корневой манифест: рабочее пространство и `rust-version`.
+pub const MANIFEST: &str = "Cargo.toml";
+
+/// Политика зависимостей (решение 13).
+pub const DENY_POLICY: &str = "deny.toml";
+
+/// Локальный список имён внешних проектов в `<каталог git>/info/` (решение 9).
+/// В репозитории его нет: иначе имена оказались бы в нём.
+pub const EXTERNAL_NAMES: &str = "slipway-external-names";
+
+/// Каталог сборки калитки от корня репозитория; остальные каталоги сборки —
+/// рядом с ним, `target/gate-<шаг>`.
+pub const GATE_TARGET: &str = "target/gate";
