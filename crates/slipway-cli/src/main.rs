@@ -9,7 +9,7 @@
 //! cargo slipway hooks install
 //! cargo slipway work start | land | drop | state …
 //! cargo slipway slice close <sNNNN>
-//! cargo slipway journal hash [<ревизия>]
+//! cargo slipway journal hash [<ревизия>] | import --work <wNNNN> [--close-finished-slices]
 //! ```
 //!
 //! Инструмент опирается на соглашения, а не на настройку: пути собраны в
@@ -43,9 +43,10 @@ const USAGE: &str = "cargo slipway — правила коммитов и жур
   cargo slipway work start <wNNNN> | land <wNNNN> [--commit <ревизия>] | drop <wNNNN> --reason <причина> | state [<wNNNN>]
   cargo slipway slice close <sNNNN>
   cargo slipway journal hash [<ревизия>]
+  cargo slipway journal import --work <wNNNN> [--close-finished-slices]
 
-  Команды work и slice принимают --trailer <трейлер> для дополнительных строк
-  трейлеров сообщения коммита.";
+  Команды work, slice и journal import принимают --trailer <трейлер> для
+  дополнительных строк трейлеров сообщения коммита.";
 
 fn main() -> ExitCode {
     let mut args: Vec<OsString> = std::env::args_os().skip(1).collect();

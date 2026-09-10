@@ -383,7 +383,7 @@ impl Record {
         const SLICE: &str = "slice: crate::slice::s";
         const TAXON: &str = "taxon!(Subsystem, ";
         Record {
-            title: quoted_after(text, "title: NonEmptyStr::new(\"").unwrap_or_default(),
+            title: quoted_after(text, "title: NonEmptyStr::new(").unwrap_or_default(),
             slice: text
                 .find(SLICE)
                 .and_then(|at| text.get(at + SLICE.len()..at + SLICE.len() + 4))
@@ -405,9 +405,141 @@ impl Record {
     }
 }
 
-/// Строка в кавычках после `marker`.
+/// `cargo slipway journal import --work <wNNNN> [--close-finished-slices]`.
+pub fn run_import(args: &[OsString]) -> u8 {
+    finish(words(args).and_then(|(words, trailers)| {
+        match words
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>()
+            .as_slice()
+        {
+            ["--work", basis] => import(basis, false, &trailers),
+            ["--work", basis, "--close-finished-slices"]
+            | ["--close-finished-slices", "--work", basis] => import(basis, true, &trailers),
+            _ => Err(usage(
+                "journal import --work <wNNNN> [--close-finished-slices]",
+            )),
+        }
+    }))
+}
+
+/// Приземления из истории (решение 15): каждая запланированная работа, у
+/// которой в истории HEAD есть коммит с её трейлером, приземляется по
+/// последнему такому коммиту. Работа без коммита остаётся запланированной —
+/// импорт не угадывает. Основание импорта пропускается: оно ещё в работе.
+/// С `close_slices` закрываются срезы, все работы которых после импорта
+/// завершены.
+fn import(basis: &str, close_slices: bool, trailers: &[String]) -> Result<u8, Refusal> {
+    let context = Context::open()?;
+    let basis_number = work_number(basis)?;
+    let area = context
+        .record(layout::WORK_DIR, basis)?
+        .area(basis)?
+        .to_owned();
+    let root = &context.repo.root;
+
+    // История идёт от новых коммитов к старым: первый встреченный — последний.
+    let log = git::read(
+        root,
+        &[
+            "log",
+            "--format=%H %(trailers:key=Slipway-Work,valueonly,separator=%x20)",
+            "HEAD",
+        ],
+    )
+    .unwrap_or_default();
+    let mut latest = std::collections::BTreeMap::new();
+    for line in log.lines() {
+        let mut fields = line.split_whitespace();
+        let Some(commit) = fields.next() else {
+            continue;
+        };
+        for id in fields {
+            if let Some(Subject::Work(number)) = Subject::parse(id) {
+                latest.entry(number).or_insert_with(|| commit.to_owned());
+            }
+        }
+    }
+
+    let at = time::now();
+    let works = context.works()?;
+    let mut events = Vec::new();
+    let mut imported = std::collections::BTreeSet::new();
+    for (number, _) in &works {
+        if *number == basis_number || context.journal.stage(*number) != Stage::Planned {
+            continue;
+        }
+        let Some(commit) = latest.get(number) else {
+            continue;
+        };
+        let tree = proof::content_hash(root, commit)
+            .ok_or_else(|| usage(format!("дерево коммита {} не читается", short(commit))))?;
+        events.push(Event::new(
+            Subject::Work(*number),
+            at.clone(),
+            Kind::Landed {
+                commit: commit.clone(),
+                tree,
+                evidence: Evidence::History,
+            },
+        ));
+        imported.insert(*number);
+    }
+
+    let mut closed = Vec::new();
+    if close_slices {
+        let mut finished = std::collections::BTreeMap::new();
+        for (number, work) in &works {
+            let Some(slice) = work.slice else {
+                continue;
+            };
+            let done = context.journal.stage(*number).is_finished() || imported.contains(number);
+            let all = finished.entry(slice).or_insert(true);
+            *all = *all && done;
+        }
+        for (slice, done) in finished {
+            if done && !context.journal.closed_slices.contains_key(&slice) {
+                events.push(Event::new(Subject::Slice(slice), at.clone(), Kind::Closed));
+                closed.push(format!("s{slice:04}"));
+            }
+        }
+    }
+
+    if events.is_empty() {
+        return Err(refused(
+            "импортировать нечего: у запланированных работ нет коммитов с их трейлером",
+        ));
+    }
+    let imported: Vec<String> = imported.iter().map(|n| format!("w{n:04}")).collect();
+    let body = format!(
+        "Приземлены по истории: {}.\nЗакрыты срезы: {}.",
+        listed(&imported),
+        listed(&closed)
+    );
+    let message = message(
+        &format!("[PLAN]({area}): журнал восстановлен из истории"),
+        &body,
+        &format!("Slipway-Work: {basis}"),
+        trailers,
+    );
+    record_and_commit(&context.repo, events, &message)
+}
+
+fn listed(items: &[String]) -> String {
+    if items.is_empty() {
+        "нет".to_owned()
+    } else {
+        items.join(", ")
+    }
+}
+
+/// Строка в кавычках после `marker`; между маркером и кавычкой допустимы
+/// пробелы и переводы строк.
 fn quoted_after(text: &str, marker: &str) -> Option<String> {
-    let rest = &text[text.find(marker)? + marker.len()..];
+    let rest = text[text.find(marker)? + marker.len()..]
+        .trim_start()
+        .strip_prefix('"')?;
     let mut out = String::new();
     let mut chars = rest.chars();
     while let Some(c) = chars.next() {

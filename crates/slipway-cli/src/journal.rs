@@ -2,12 +2,14 @@
 //!
 //! ```text
 //! cargo slipway journal hash [<ревизия>]
+//! cargo slipway journal import --work <wNNNN> [--close-finished-slices] [--trailer <трейлер>]…
 //! ```
 //!
 //! `hash` печатает хэш дерева ревизии без каталога журнала — тот, к которому
-//! привязано доказательство готовности.
+//! привязано доказательство готовности. `import` восстанавливает прошлое по
+//! трейлерам истории: работа с коммитом по трейлеру приземляется из истории.
 
-use crate::{git, proof};
+use crate::{git, proof, work};
 use std::ffi::OsString;
 use std::path::Path;
 
@@ -15,8 +17,11 @@ use std::path::Path;
 pub fn run(args: &[OsString]) -> u8 {
     match args.first().and_then(|name| name.to_str()) {
         Some("hash") if args.len() <= 2 => hash(args.get(1).and_then(|rev| rev.to_str())),
+        Some("import") => work::run_import(&args[1..]),
         _ => {
-            eprintln!("journal: hash [<ревизия>]");
+            eprintln!(
+                "journal: hash [<ревизия>] | import --work <wNNNN> [--close-finished-slices]"
+            );
             2
         }
     }
