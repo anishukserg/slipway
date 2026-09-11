@@ -4,7 +4,7 @@
 
 ```text
 cargo slipway commit -F <сообщение> [--log <файл>] [--timeout <сек>] -- <пути…>
-cargo slipway msg-check [--form-only] <сообщение>
+cargo slipway msg-check [--form-only] <сообщение> | --range <диапазон>
 cargo slipway gate [--repo <каталог>] [--journal-only] [<дерево>]
 cargo slipway hook pre-commit | commit-msg <сообщение> | pre-push <удалённый> <адрес>
 cargo slipway hooks install

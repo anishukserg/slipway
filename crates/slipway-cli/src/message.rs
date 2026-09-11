@@ -4,12 +4,19 @@
 //!
 //! ```text
 //! cargo slipway msg-check [--form-only] <файл сообщения>
+//! cargo slipway msg-check --range <диапазон>
 //! ```
 //!
 //! Без `--form-only` проверяется ещё и то, что каждая работа и каждый срез из
 //! трейлеров есть в индексе — в дереве будущего коммита. Хук commit-msg
 //! вызывает полный вариант, команда commit — только форму и до блокировки,
 //! чтобы ошибка в теме не стоила прогона калитки.
+//!
+//! `--range` проверяет сообщение каждого коммита диапазона `git rev-list` по
+//! дереву этого коммита. Так CI проверяет путь в основную ветку, мимо которого
+//! хук мог пройти: правку на сайте, коммит без хуков, слияние кнопкой
+//! (решение 18). Последняя строка вывода — `MSG-CHECK OK (<n>)` или
+//! `MSG-CHECK REFUSED: <k> из <n>`.
 //!
 //! Код возврата: 0 — принято; 1 — отвергнуто (причины в stderr); 2 — ошибка
 //! запуска.
@@ -35,10 +42,13 @@ const SLICE_TRAILER: &str = "Slipway-Slice:";
 /// `cargo slipway msg-check`.
 pub fn run(args: &[OsString]) -> u8 {
     let (form_only, file) = match args {
+        [flag, range] if flag.to_str() == Some("--range") => return run_range(range),
         [flag, file] if flag.to_str() == Some("--form-only") => (true, file),
         [file] => (false, file),
         _ => {
-            eprintln!("msg-check: нужен файл сообщения — msg-check [--form-only] <файл>");
+            eprintln!(
+                "msg-check: нужен файл сообщения или диапазон — msg-check [--form-only] <файл> | --range <диапазон>"
+            );
             return 2;
         }
     };
@@ -59,24 +69,82 @@ pub fn run(args: &[OsString]) -> u8 {
     }
 }
 
+/// `msg-check --range`: сообщение каждого коммита диапазона — по дереву этого
+/// коммита. Отказ называет коммит двенадцатью знаками хэша и темой.
+fn run_range(range: &OsString) -> u8 {
+    let dir = Path::new(".");
+    let Some(range) = range.to_str() else {
+        eprintln!("msg-check: диапазон не в UTF-8");
+        return 2;
+    };
+    let Some(listing) = git::read(dir, &["rev-list", "--reverse", range, "--"]) else {
+        eprintln!("msg-check: диапазон {range} не читается");
+        return 2;
+    };
+    let commits: Vec<&str> = listing.lines().filter(|line| !line.is_empty()).collect();
+    let mut refused = 0;
+    for &commit in &commits {
+        match check_commit(dir, commit) {
+            Ok(errors) if errors.is_empty() => {}
+            Ok(errors) => {
+                refused += 1;
+                let short = commit.get(..12).unwrap_or(commit);
+                let subject =
+                    git::read(dir, &["log", "-1", "--format=%s", commit]).unwrap_or_default();
+                eprint!("{short} {}: {}", subject.trim(), report(&errors));
+            }
+            Err(problem) => {
+                eprintln!("msg-check: {commit}: {problem}");
+                return 2;
+            }
+        }
+    }
+    if refused == 0 {
+        println!("MSG-CHECK OK ({})", commits.len());
+        0
+    } else {
+        println!("MSG-CHECK REFUSED: {refused} из {}", commits.len());
+        1
+    }
+}
+
 /// Проверяет сообщение по индексу репозитория в `dir`: области — из таксономии
 /// в индексе, основания — из индекса. `Err` — проверку не из чего выполнить.
 pub fn check_in_index(dir: &Path, text: &str, form_only: bool) -> Result<Vec<String>, String> {
-    let taxonomy = format!(":{}", layout::TAXONOMY);
+    check_against(dir, "", "в индексе", text, form_only)
+}
+
+/// Проверяет сообщение коммита по дереву этого же коммита.
+pub fn check_commit(dir: &Path, commit: &str) -> Result<Vec<String>, String> {
+    let text = git::read(dir, &["log", "-1", "--format=%B", commit])
+        .ok_or_else(|| format!("сообщение коммита {commit} не читается"))?;
+    check_against(dir, commit, &format!("в дереве {commit}"), &text, false)
+}
+
+/// Проверка по дереву `tree`: пустая строка — индекс, иначе ревизия; `place`
+/// называет это дерево в тексте ошибки.
+fn check_against(
+    dir: &Path,
+    tree: &str,
+    place: &str,
+    text: &str,
+    form_only: bool,
+) -> Result<Vec<String>, String> {
+    let taxonomy = format!("{tree}:{}", layout::TAXONOMY);
     let scopes = git::read(dir, &["show", &taxonomy])
         .map(|text| subsystem_scopes(&text))
         .unwrap_or_default();
     if scopes.is_empty() {
         return Err(format!(
-            "в индексе нет значений оси Subsystem ({})",
+            "{place} нет значений оси Subsystem ({})",
             layout::TAXONOMY
         ));
     }
-    let in_index = |path: &str| {
-        let spec = format!(":{path}");
+    let in_tree = |path: &str| {
+        let spec = format!("{tree}:{path}");
         git::succeeds(dir, &["cat-file", "-e", &spec])
     };
-    let exists: Option<&dyn Fn(&str) -> bool> = if form_only { None } else { Some(&in_index) };
+    let exists: Option<&dyn Fn(&str) -> bool> = if form_only { None } else { Some(&in_tree) };
     Ok(problems(text, &scopes, exists))
 }
 

@@ -1,0 +1,105 @@
+# Калитка Slipway в CI (решение 18): те же шаги, что у pre-commit, и проверка
+# основания каждого коммита на пути в master. Actions — только GitHub и
+# закреплены полным хэшем коммита; токен — только на чтение.
+name: gate
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gate-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: never
+  RUSTUP_AUTO_INSTALL: "0"
+  # Смена версии cargo-deny меняет обе строки одним коммитом (решение 18).
+  CARGO_DENY_VERSION: "0.20.2"
+  CARGO_DENY_SHA256: "9f12ed4c49936e09b48bf862b595cde2fe64fcbd9d74dfacac6131ca824c8d5f"
+
+jobs:
+  gate:
+    name: калитка
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Вся история
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Тулчейн разработки и минимальная версия
+        run: |
+          channel=$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)
+          msrv=$(sed -n 's/^rust-version = "\(.*\)"$/\1/p' Cargo.toml)
+          case $msrv in *.*.*) ;; *) msrv=$msrv.0 ;; esac
+          rustup toolchain install "$channel" --profile minimal --component rustfmt,clippy
+          rustup toolchain install "$msrv" --profile minimal
+          rustup toolchain list
+
+      - name: cargo-deny и база уязвимостей
+        run: |
+          archive="cargo-deny-$CARGO_DENY_VERSION-x86_64-unknown-linux-musl.tar.gz"
+          curl -sSfL -o "$RUNNER_TEMP/$archive" \
+            "https://github.com/EmbarkStudios/cargo-deny/releases/download/$CARGO_DENY_VERSION/$archive"
+          echo "$CARGO_DENY_SHA256  $RUNNER_TEMP/$archive" | sha256sum --check --strict
+          tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP"
+          install -m 0755 "$RUNNER_TEMP/${archive%.tar.gz}/cargo-deny" "$HOME/.cargo/bin/cargo-deny"
+          cargo deny --version
+          cargo deny fetch
+
+      # Имена не публикуются: список живёт в секрете, каждое имя маскируется в
+      # журнале прогона. Pull request из форка секрета не получает — калитка
+      # пропустит шаг и назовёт его в вердикте.
+      - name: Список внешних имён из секрета
+        env:
+          NAMES: ${{ secrets.SLIPWAY_EXTERNAL_NAMES }}
+        run: |
+          if [ -z "$NAMES" ]; then
+            echo "секрета SLIPWAY_EXTERNAL_NAMES нет — калитка пропустит шаг внешних имён"
+            exit 0
+          fi
+          printf '%s\n' "$NAMES" | while IFS= read -r line; do
+            name=$(printf '%s' "$line" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+            case $name in ''|'#'*) ;; *) echo "::add-mask::$name" ;; esac
+          done
+          info="$(git rev-parse --absolute-git-dir)/info"
+          mkdir -p "$info"
+          printf '%s\n' "$NAMES" > "$info/slipway-external-names"
+
+      - name: Калитка
+        run: cargo run --quiet --locked -p slipway-cli -- gate
+
+      - name: Основания коммитов
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          case $EVENT in
+            pull_request)
+              range="$BASE..$HEAD"
+              ;;
+            push)
+              if [ -z "${BEFORE//0/}" ]; then
+                range="$AFTER~1..$AFTER"
+              else
+                range="$BEFORE..$AFTER"
+              fi
+              ;;
+            *)
+              echo "ручной запуск: диапазона нет, основания коммитов не проверяются"
+              exit 0
+              ;;
+          esac
+          cargo run --quiet --locked -p slipway-cli -- msg-check --range "$range"
