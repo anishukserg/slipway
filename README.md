@@ -42,6 +42,10 @@ cargo run -p slipway-cli -- hooks install  # хуки git: калитка на �
 
 Коммит в Slipway проходит калитку и несёт трейлер основания из плана — правила в решении 8, [doc/adr/a0008.rs](doc/adr/a0008.rs).
 
+## Участие
+
+Как предложить изменение — [CONTRIBUTING.md](CONTRIBUTING.md); об уязвимостях сообщают приватно — [SECURITY.md](SECURITY.md).
+
 ## Лицензия
 
 [Apache License 2.0](LICENSE).
