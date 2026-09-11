@@ -7,12 +7,12 @@ slipway_knowledge::adr!(2,
     title: "Прямая передача плана из ORM в исполнитель",
     status: DocStatus::Active,
     subsystems: &[taxon!(Subsystem, Executor), taxon!(Subsystem, Storage)],
-    context: r#"
+    context: r"
         Короткие транзакции тратят заметную долю времени на разбор SQL.
-    "#,
-    decision: r#"
+    ",
+    decision: r"
         Генерировать бинарный план на стороне ORM и передавать его напрямую.
-    "#,
+    ",
     trade_offs: &[
         "Плюс: нет разбора текста на горячем пути",
         "Минус: нужно стабилизировать двоичное представление плана",

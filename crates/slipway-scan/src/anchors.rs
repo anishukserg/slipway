@@ -324,7 +324,7 @@ fn anchor_attr(attrs: &[syn::Attribute]) -> Result<Option<(String, AnchorMode)>,
 pub fn emit_anchor_refs(anchors: &[ScannedAnchor]) -> String {
     use std::fmt::Write as _;
     let mut out = String::from("// ПОРОЖДЕНО slipway-scan. Не редактировать.\n\n");
-    out.push_str("#[allow(non_upper_case_globals, unused_imports)]\npub mod anchor {\n    use slipway_core::AnchorId;\n");
+    out.push_str("/// Ссылки на разметку кода: путь к константе вместо строки.\n#[allow(non_upper_case_globals, unused_imports)]\npub mod anchor {\n    use slipway_core::AnchorId;\n");
     for a in anchors {
         let _ = writeln!(
             out,

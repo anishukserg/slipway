@@ -7,12 +7,12 @@ slipway_knowledge::adr!(3,
     title: "Версия 4 формата страницы данных",
     status: DocStatus::Active,
     subsystems: &[taxon!(Subsystem, Storage)],
-    context: r#"
+    context: r"
         Заголовок страницы исчерпал резерв флагов.
-    "#,
-    decision: r#"
+    ",
+    decision: r"
         Расширить заголовок до 72 байт, подняв версию формата до 4.
-    "#,
+    ",
     trade_offs: &["Минус: файлы версии 3 требуют перекодирования"],
     constraints: &["Страницы версии 3 обязаны читаться до конца срока поддержки."],
     authors: nonempty_str!["Анищук Сергей"],

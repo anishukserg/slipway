@@ -18,8 +18,15 @@ pub struct PlanKind {
     record: &'static str,
     item: &'static str,
     all: &'static str,
+    /// Запись вида в документации порождённого кода: «Срез 3».
+    noun: &'static str,
+    /// Винительный падеж: «ссылка на срез 3».
+    accusative: &'static str,
+    /// Множественное число: «ссылки на срезы».
+    plural: &'static str,
 }
 
+/// Реестр направлений.
 pub const THRUSTS: PlanKind = PlanKind {
     macro_name: "thrust",
     prefix: 't',
@@ -28,8 +35,12 @@ pub const THRUSTS: PlanKind = PlanKind {
     record: "Thrust",
     item: "THRUST",
     all: "ALL_THRUSTS",
+    noun: "Направление",
+    accusative: "направление",
+    plural: "направления",
 };
 
+/// Реестр срезов.
 pub const SLICES: PlanKind = PlanKind {
     macro_name: "slice",
     prefix: 's',
@@ -38,8 +49,12 @@ pub const SLICES: PlanKind = PlanKind {
     record: "Slice",
     item: "SLICE",
     all: "ALL_SLICES",
+    noun: "Срез",
+    accusative: "срез",
+    plural: "срезы",
 };
 
+/// Реестр единиц работы.
 pub const WORK: PlanKind = PlanKind {
     macro_name: "work",
     prefix: 'w',
@@ -48,6 +63,9 @@ pub const WORK: PlanKind = PlanKind {
     record: "WorkItem",
     item: "WORK",
     all: "ALL_WORK",
+    noun: "Единица работы",
+    accusative: "единицу работы",
+    plural: "единицы работы",
 };
 
 /// Сканирует каталог реестра одного вида.
@@ -59,19 +77,26 @@ pub fn scan_plan(dir: &Path, kind: &PlanKind) -> Result<Vec<ScannedDecision>, Sc
 /// и список записей вида.
 pub fn emit_plan(entries: &[ScannedDecision], kind: &PlanKind) -> String {
     let mut out = String::from("// ПОРОЖДЕНО slipway-scan. Не редактировать.\n\n");
+    // Каждый публичный элемент документирован: порождённый код собирается под
+    // строгим профилем lints продукта (решение 16).
     for e in entries {
-        let _ = writeln!(out, "#[path = {:?}]\npub mod {};", e.file, e.module);
+        let _ = writeln!(
+            out,
+            "/// {} {}.\n#[path = {:?}]\npub mod {};",
+            kind.noun, e.id, e.file, e.module
+        );
     }
 
     let _ = writeln!(
         out,
-        "\n#[allow(non_upper_case_globals, unused_imports)]\npub mod {} {{\n    use slipway_core::{};",
-        kind.module, kind.reference
+        "\n/// Ссылки на {}: путь к константе вместо номера.\n#[allow(non_upper_case_globals, unused_imports)]\npub mod {} {{\n    use slipway_core::{};",
+        kind.plural, kind.module, kind.reference
     );
     for e in entries {
         let _ = writeln!(
             out,
-            "    pub const {m}: {r} = {r}::__from_scan({id});",
+            "    /// Ссылка на {acc} {id}.\n    pub const {m}: {r} = {r}::__from_scan({id});",
+            acc = kind.accusative,
             m = e.module,
             r = kind.reference,
             id = e.id
@@ -91,8 +116,8 @@ pub fn emit_plan(entries: &[ScannedDecision], kind: &PlanKind) -> String {
 
     let _ = writeln!(
         out,
-        "\npub static {}: &[&slipway_work::{}] = &[",
-        kind.all, kind.record
+        "\n/// Все {} реестра.\npub static {}: &[&slipway_work::{}] = &[",
+        kind.plural, kind.all, kind.record
     );
     for e in entries {
         let _ = writeln!(out, "    &{}::{},", e.module, kind.item);

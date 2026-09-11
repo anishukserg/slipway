@@ -7,12 +7,12 @@ slipway_knowledge::adr!(1,
     title: "Текстовый SQL как единственный путь исполнения",
     status: DocStatus::SupersededBy(crate::adr::a0002),
     subsystems: &[taxon!(Subsystem, Executor)],
-    context: r#"
+    context: r"
         Исходное устройство: любой запрос проходит через разбор текста SQL.
-    "#,
-    decision: r#"
+    ",
+    decision: r"
         Единственный путь исполнения — текстовый SQL.
-    "#,
+    ",
     trade_offs: &["Плюс: простота", "Минус: разбор текста на горячем пути"],
     constraints: &[],
     authors: nonempty_str!["Анищук Сергей"],

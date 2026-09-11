@@ -22,6 +22,7 @@ macro_rules! adr {
 #[macro_export]
 macro_rules! rfc {
     ($id:literal, $($field:ident : $value:expr),* $(,)?) => {
+        /// Запись спецификации этого файла.
         pub static SPEC: $crate::DomainSpecification = $crate::DomainSpecification {
             id: $id,
             $($field: $value),*
@@ -33,6 +34,7 @@ macro_rules! rfc {
 #[macro_export]
 macro_rules! paste_adr {
     ($id:literal, $($field:ident : $value:expr),* $(,)?) => {
+        /// Запись решения этого файла.
         pub static DECISION: $crate::ArchitectureDecision = $crate::ArchitectureDecision {
             id: $id,
             $($field: $value),*

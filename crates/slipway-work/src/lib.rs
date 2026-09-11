@@ -25,6 +25,7 @@ pub use schema::{
 #[macro_export]
 macro_rules! thrust {
     ($id:literal, $($field:ident : $value:expr),* $(,)?) => {
+        /// Запись направления этого файла.
         pub static THRUST: $crate::Thrust = $crate::Thrust { id: $id, $($field: $value),* };
     };
 }
@@ -33,6 +34,7 @@ macro_rules! thrust {
 #[macro_export]
 macro_rules! slice {
     ($id:literal, $($field:ident : $value:expr),* $(,)?) => {
+        /// Запись среза этого файла.
         pub static SLICE: $crate::Slice = $crate::Slice { id: $id, $($field: $value),* };
     };
 }
@@ -41,6 +43,7 @@ macro_rules! slice {
 #[macro_export]
 macro_rules! work {
     ($id:literal, $($field:ident : $value:expr),* $(,)?) => {
+        /// Запись единицы работы этого файла.
         pub static WORK: $crate::WorkItem = $crate::WorkItem { id: $id, $($field: $value),* };
     };
 }

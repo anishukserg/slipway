@@ -261,16 +261,23 @@ fn extract_status(tokens: &[proc_macro2::TokenTree]) -> Status {
 pub fn emit_refs(decisions: &[ScannedDecision]) -> String {
     let mut out = String::from("// ПОРОЖДЕНО slipway-scan. Не редактировать.\n\n");
 
-    for d in decisions {
-        let _ = writeln!(out, "#[path = {:?}]\npub mod {};", d.file, d.module);
-    }
-
-    out.push_str("\n#[allow(non_upper_case_globals, unused_imports)]\npub mod adr {\n    use slipway_core::AdrRef;\n");
+    // Каждый публичный элемент документирован: порождённый код собирается под
+    // строгим профилем lints продукта (решение 16).
     for d in decisions {
         let _ = writeln!(
             out,
-            "    pub const {}: AdrRef = AdrRef::__from_scan({});",
-            d.module, d.id
+            "/// Решение {}.\n#[path = {:?}]\npub mod {};",
+            d.id, d.file, d.module
+        );
+    }
+
+    out.push_str("\n/// Ссылки на решения: путь к константе вместо номера.\n#[allow(non_upper_case_globals, unused_imports)]\npub mod adr {\n    use slipway_core::AdrRef;\n");
+    for d in decisions {
+        let _ = writeln!(
+            out,
+            "    /// Ссылка на решение {id}.\n    pub const {m}: AdrRef = AdrRef::__from_scan({id});",
+            m = d.module,
+            id = d.id
         );
     }
     out.push_str("}\n\n");
@@ -283,8 +290,9 @@ pub fn emit_refs(decisions: &[ScannedDecision]) -> String {
     {
         let _ = writeln!(
             out,
-            "    pub const {}: SupersededRef = SupersededRef::__from_scan({});",
-            d.module, d.id
+            "    /// Ссылка на замещённое решение {id}.\n    pub const {m}: SupersededRef = SupersededRef::__from_scan({id});",
+            m = d.module,
+            id = d.id
         );
     }
     out.push_str("}\n\n");
@@ -310,7 +318,7 @@ pub fn emit_refs(decisions: &[ScannedDecision]) -> String {
         );
     }
 
-    out.push_str("\npub static ALL: &[&slipway_knowledge::ArchitectureDecision] = &[\n");
+    out.push_str("\n/// Все решения реестра.\npub static ALL: &[&slipway_knowledge::ArchitectureDecision] = &[\n");
     for d in decisions {
         let _ = writeln!(out, "    &{}::DECISION,", d.module);
     }
@@ -322,14 +330,19 @@ pub fn emit_refs(decisions: &[ScannedDecision]) -> String {
 pub fn emit_spec_refs(specs: &[ScannedDecision]) -> String {
     let mut out = String::from("// ПОРОЖДЕНО slipway-scan. Не редактировать.\n\n");
     for s in specs {
-        let _ = writeln!(out, "#[path = {:?}]\npub mod {};", s.file, s.module);
+        let _ = writeln!(
+            out,
+            "/// Спецификация {}.\n#[path = {:?}]\npub mod {};",
+            s.id, s.file, s.module
+        );
     }
-    out.push_str("\n#[allow(non_upper_case_globals, unused_imports)]\npub mod rfc {\n    use slipway_core::RfcRef;\n");
+    out.push_str("\n/// Ссылки на спецификации: путь к константе вместо номера.\n#[allow(non_upper_case_globals, unused_imports)]\npub mod rfc {\n    use slipway_core::RfcRef;\n");
     for s in specs {
         let _ = writeln!(
             out,
-            "    pub const {}: RfcRef = RfcRef::__from_scan({});",
-            s.module, s.id
+            "    /// Ссылка на спецификацию {id}.\n    pub const {m}: RfcRef = RfcRef::__from_scan({id});",
+            m = s.module,
+            id = s.id
         );
     }
     out.push_str("}\n\n");
@@ -341,7 +354,7 @@ pub fn emit_spec_refs(specs: &[ScannedDecision]) -> String {
             id = s.id
         );
     }
-    out.push_str("\npub static ALL_SPECS: &[&slipway_knowledge::DomainSpecification] = &[\n");
+    out.push_str("\n/// Все спецификации реестра.\npub static ALL_SPECS: &[&slipway_knowledge::DomainSpecification] = &[\n");
     for s in specs {
         let _ = writeln!(out, "    &{}::SPEC,", s.module);
     }

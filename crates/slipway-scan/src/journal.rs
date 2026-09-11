@@ -36,16 +36,19 @@ pub fn emit_journal(
     if !subjects.is_empty() {
         out.push_str("\n// События ссылаются на план путями: предмет вне плана не разрешается.\n");
     }
+    // Пути без crate::: файлы порождённого кода включаются рядом друг с другом,
+    // и префикс — лишняя квалификация под lints продукта, а при включении в
+    // подмодуль — неверный путь (решение 16).
     for subject in &subjects {
         let _ = match subject {
             Subject::Work(_) => writeln!(
                 out,
-                "const _: slipway_core::WorkRef = crate::work::{};",
+                "const _: slipway_core::WorkRef = work::{};",
                 subject.id()
             ),
             Subject::Slice(_) => writeln!(
                 out,
-                "const _: slipway_core::SliceRef = crate::slice::{};",
+                "const _: slipway_core::SliceRef = slice::{};",
                 subject.id()
             ),
         };
@@ -57,14 +60,14 @@ pub fn emit_journal(
     for entry in work {
         let _ = writeln!(
             out,
-            "    (crate::work::{}, slipway_work::WorkState::{}),",
+            "    (work::{}, slipway_work::WorkState::{}),",
             entry.module,
             state_name(journal.stage(entry.id))
         );
     }
     out.push_str("];\n\n/// Срезы, закрытые событием журнала.\npub static CLOSED_SLICES: &[slipway_core::SliceRef] = &[\n");
     for slice in journal.closed_slices.keys() {
-        let _ = writeln!(out, "    crate::slice::{},", Subject::Slice(*slice).id());
+        let _ = writeln!(out, "    slice::{},", Subject::Slice(*slice).id());
     }
     out.push_str("];\n");
 
@@ -82,7 +85,7 @@ pub fn emit_journal(
             );
             let _ = writeln!(
                 out,
-                "const _: () = assert!(crate::{}::WORK.slice.index() != {slice}, {message:?});",
+                "const _: () = assert!({}::WORK.slice.index() != {slice}, {message:?});",
                 entry.module
             );
         }
@@ -136,18 +139,21 @@ mod tests {
         )];
         let code = emit_journal(&events, &[], &plan(&[1, 2]));
         assert!(
-            code.contains("const _: slipway_core::WorkRef = crate::work::w0001;"),
+            code.contains("const _: slipway_core::WorkRef = work::w0001;"),
             "{code}"
         );
         assert!(
-            code.contains("(crate::work::w0001, slipway_work::WorkState::LandedFromHistory),"),
+            code.contains("(work::w0001, slipway_work::WorkState::LandedFromHistory),"),
             "{code}"
         );
         assert!(
-            code.contains("(crate::work::w0002, slipway_work::WorkState::Planned),"),
+            code.contains("(work::w0002, slipway_work::WorkState::Planned),"),
             "{code}"
         );
         assert!(!code.contains("compile_error!"), "{code}");
+        // Порождённые файлы включаются рядом: crate:: — лишняя квалификация
+        // под lints продукта (решение 16).
+        assert!(!code.contains("crate::"), "{code}");
     }
 
     #[test]
@@ -180,8 +186,8 @@ mod tests {
             event(Subject::Slice(3), 2, Kind::Closed),
         ];
         let code = emit_journal(&events, &[], &plan(&[1, 2]));
-        assert!(code.contains("    crate::slice::s0003,"), "{code}");
-        assert!(code.contains("assert!(crate::w0002::WORK.slice.index() != 3, \"журнал: срез s0003 закрыт событием s0003/20260911T031502Z-closed.toml, а работа w0002 не завершена\")"), "{code}");
-        assert!(!code.contains("crate::w0001::WORK.slice"), "{code}");
+        assert!(code.contains("    slice::s0003,"), "{code}");
+        assert!(code.contains("assert!(w0002::WORK.slice.index() != 3, \"журнал: срез s0003 закрыт событием s0003/20260911T031502Z-closed.toml, а работа w0002 не завершена\")"), "{code}");
+        assert!(!code.contains("w0001::WORK.slice"), "{code}");
     }
 }

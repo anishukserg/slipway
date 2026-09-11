@@ -76,15 +76,23 @@ impl<A> fmt::Debug for Taxon<A> {
 /// Порождает модуль констант на каждую ось, поэтому `taxon!(Subsystem, Foo)`
 /// при опечатке даёт `unresolved path`, а не проходит молча. Имя оси обязано
 /// быть одним из [`axis`], иначе ошибка компиляции.
+///
+/// Каждый порождённый элемент документирован: таксономия собирается под
+/// строгим профилем lints продукта (решение 16).
 #[macro_export]
 macro_rules! declare_taxonomy {
     ($($axis:ident => [$($value:ident),* $(,)?]),* $(,)?) => {
         $(
+            #[doc = concat!("Значения оси `", stringify!($axis), "`.")]
             #[allow(non_upper_case_globals, non_snake_case)]
             pub mod $axis {
                 /// Ось значений этого модуля.
                 pub type Axis = $crate::axis::$axis;
-                $(pub const $value: $crate::Taxon<Axis> = $crate::Taxon::__new_unchecked(stringify!($value));)*
+                $(
+                    #[doc = concat!("Значение `", stringify!($value), "`.")]
+                    pub const $value: $crate::Taxon<Axis> = $crate::Taxon::__new_unchecked(stringify!($value));
+                )*
+                /// Все значения оси в порядке объявления.
                 pub const ALL: &[$crate::Taxon<Axis>] = &[$($value),*];
             }
         )*

@@ -13,8 +13,31 @@ publish = false
 [lib]
 path = "lib.rs"
 
-[lints]
-workspace = true
+# Строгий профиль lints продукта (решение 16). Реестр Slipway — первый
+# потребитель порождённого кода и держит профиль на уровне forbid, чтобы
+# ловилось и глушение через allow. Cargo не соединяет workspace = true с
+# добавками, поэтому запреты рабочего пространства повторены. Тот же профиль —
+# в examples/demo-doc/Cargo.toml; меняется в обоих одним коммитом.
+[lints.rust]
+unsafe_code = "forbid"
+unstable_features = "forbid"
+missing_docs = "forbid"
+missing_debug_implementations = "forbid"
+unreachable_pub = "forbid"
+elided_lifetimes_in_paths = "forbid"
+trivial_casts = "forbid"
+trivial_numeric_casts = "forbid"
+unused_qualifications = "forbid"
+unused_lifetimes = "forbid"
+single_use_lifetimes = "forbid"
+
+[lints.clippy]
+pedantic = { level = "forbid", priority = -1 }
+
+[lints.rustdoc]
+broken_intra_doc_links = "forbid"
+private_intra_doc_links = "forbid"
+unescaped_backticks = "forbid"
 
 [dependencies]
 slipway-core = { workspace = true }
