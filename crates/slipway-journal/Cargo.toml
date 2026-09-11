@@ -4,7 +4,11 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
 description = "Slipway: журнал слоя работы — формат событий, автомат переходов, свёртка"
+readme = "README.md"
+keywords = ["journal", "event-log", "state-machine", "toml", "methodology"]
+categories = ["development-tools", "parser-implementations"]
 
 [lints]
 workspace = true

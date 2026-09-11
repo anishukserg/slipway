@@ -4,7 +4,11 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
 description = "Slipway: атрибут-маркер #[doc_anchor] для разметки кода"
+readme = "README.md"
+keywords = ["proc-macro", "documentation", "code-anchor", "adr", "attribute"]
+categories = ["development-tools::procedural-macro-helpers"]
 
 [lib]
 proc-macro = true

@@ -4,7 +4,11 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
 description = "Slipway: скан реестра и порождение модулей констант для ссылок"
+readme = "README.md"
+keywords = ["build-script", "codegen", "adr", "documentation", "registry"]
+categories = ["development-tools::build-utils"]
 
 [lints]
 workspace = true

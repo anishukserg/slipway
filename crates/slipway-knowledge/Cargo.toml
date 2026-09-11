@@ -4,7 +4,11 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
 description = "Slipway: слой знания — схема решений, спецификаций, глоссария"
+readme = "README.md"
+keywords = ["adr", "architecture", "decision-records", "documentation", "compile-time"]
+categories = ["development-tools"]
 
 [lints]
 workspace = true

@@ -4,7 +4,11 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
 description = "Slipway: общие типы и макросы — ссылочные newtype, NonEmpty, обратимость, таксономия"
+readme = "README.md"
+keywords = ["documentation", "compile-time", "adr", "taxonomy", "methodology"]
+categories = ["development-tools", "rust-patterns"]
 
 [lints]
 workspace = true

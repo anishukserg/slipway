@@ -4,7 +4,11 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
 description = "Slipway: правила коммитов, калитка и хуки — команда cargo slipway"
+readme = "README.md"
+keywords = ["cargo-subcommand", "git-hooks", "commit-message", "journal", "methodology"]
+categories = ["development-tools::cargo-plugins", "command-line-utilities"]
 
 # Бинарь с именем cargo-slipway вызывается как `cargo slipway`.
 [[bin]]

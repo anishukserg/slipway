@@ -4,7 +4,11 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
 description = "Slipway: слой работы — направления, срезы, единицы работы и их происхождение"
+readme = "README.md"
+keywords = ["planning", "work-items", "compile-time", "methodology", "registry"]
+categories = ["development-tools"]
 
 [lints]
 workspace = true
