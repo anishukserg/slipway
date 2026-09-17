@@ -150,23 +150,21 @@ impl Refusal {
 }
 
 fn commit(args: &Args) -> Result<String, Refusal> {
-    let repo =
-        git::Repo::discover(Path::new(".")).ok_or_else(|| refuse(2, "not a git repository"))?;
+    let repo = git::Repo::discover(Path::new(".")).map_err(|problem| refuse(2, problem))?;
     let root = repo.root.as_path();
     let output = Output::open(args.log.as_deref())?;
 
     let text = fs::read_to_string(&args.message)
         .map_err(|_| refuse(2, "-F <readable message file> is required"))?;
-    match message::check_in_index(root, &text, true) {
-        Ok(errors) if errors.is_empty() => {}
-        Ok(errors) => {
-            output.note(&message::report(&errors));
-            return Err(refuse(
-                4,
-                "message is not in the required form (decision 8)",
-            ));
-        }
-        Err(problem) => return Err(refuse(2, problem)),
+    // Правила — из индекса, из того же дерева, что и проверяемое (решение 20).
+    let checked =
+        message::check_in_index(root, &text, true).map_err(|problem| refuse(2, problem))?;
+    if !checked.problems.is_empty() {
+        output.note(&checked.report());
+        return Err(refuse(
+            4,
+            "message is not in the required form (decision 8)",
+        ));
     }
 
     let _lock = Lock::acquire(&repo.git_dir.join(layout::COMMIT_LOCK), args.timeout)

@@ -28,12 +28,15 @@ pub fn run(args: &[OsString]) -> u8 {
 }
 
 fn hash(revision: Option<&str>) -> u8 {
-    let Some(repo) = git::Repo::discover(Path::new(".")) else {
-        eprintln!("journal hash: not a git repository");
-        return 2;
+    let repo = match git::Repo::discover(Path::new(".")) {
+        Ok(repo) => repo,
+        Err(problem) => {
+            eprintln!("journal hash: {problem}");
+            return 2;
+        }
     };
     let revision = revision.unwrap_or("HEAD");
-    match proof::content_hash(&repo.root, revision) {
+    match proof::content_hash(&repo.root, &repo.config.journal_dir(), revision) {
         Some(hash) => {
             println!("{hash}");
             0

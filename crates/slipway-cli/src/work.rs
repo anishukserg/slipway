@@ -13,11 +13,14 @@
 //! отвергаются до записи события. Последняя строка — вердикт команды commit или
 //! `WORK REFUSED: <reason>`.
 //!
+//! Пути реестра и темы служебных коммитов — из настройки рабочего дерева
+//! (решение 20): команда пишет событие в это дерево и по его правилам.
+//!
 //! Код возврата: 0 — событие записано и закоммичено или свёртка напечатана;
 //! 1 — переход незаконен, нет доказательства или журнал не сворачивается;
 //! 2 — неверные аргументы или окружение; прочие коды — коды команды commit.
 
-use crate::{commit, git, layout, proof};
+use crate::{commit, config, git, layout, proof};
 use slipway_journal::event::relative_path;
 use slipway_journal::{fold, time, Event, Evidence, Journal, Kind, Stage, Subject};
 use std::ffi::OsString;
@@ -119,7 +122,7 @@ fn words(args: &[OsString]) -> Result<(Vec<String>, Vec<String>), Refusal> {
 fn start(id: &str, trailers: &[String]) -> Result<u8, Refusal> {
     let context = Context::open()?;
     let number = work_number(id)?;
-    let work = context.record(layout::WORK_DIR, id)?;
+    let work = context.work(id)?;
     let stage = context.journal.stage(number);
     if stage != Stage::Planned {
         return Err(refused(format!(
@@ -137,7 +140,7 @@ fn start(id: &str, trailers: &[String]) -> Result<u8, Refusal> {
     let area = work.area(id)?;
     let event = Event::new(Subject::Work(number), time::now(), Kind::Started);
     let message = message(
-        &format!("[PLAN]({area}): work {id} started"),
+        &config::fill(&context.repo.config.subject_started, area, id),
         &work.title,
         &format!("Slipway-Work: {id}"),
         trailers,
@@ -148,7 +151,7 @@ fn start(id: &str, trailers: &[String]) -> Result<u8, Refusal> {
 fn land(id: &str, revision: &str, trailers: &[String]) -> Result<u8, Refusal> {
     let context = Context::open()?;
     let number = work_number(id)?;
-    let work = context.record(layout::WORK_DIR, id)?;
+    let work = context.work(id)?;
     let stage = context.journal.stage(number);
     if stage != Stage::Started {
         return Err(refused(format!(
@@ -174,7 +177,8 @@ fn land(id: &str, revision: &str, trailers: &[String]) -> Result<u8, Refusal> {
             short(&commit)
         )));
     }
-    let tree = proof::content_hash(root, &commit).ok_or_else(|| {
+    let journal = context.repo.config.journal_dir();
+    let tree = proof::content_hash(root, &journal, &commit).ok_or_else(|| {
         usage(format!(
             "the tree of commit {} cannot be read",
             short(&commit)
@@ -208,7 +212,7 @@ fn land(id: &str, revision: &str, trailers: &[String]) -> Result<u8, Refusal> {
         },
     );
     let message = message(
-        &format!("[PLAN]({area}): work {id} landed"),
+        &config::fill(&context.repo.config.subject_landed, area, id),
         &format!("{}\nCommit {}.", work.title, short(&commit)),
         &trailer,
         trailers,
@@ -222,7 +226,7 @@ fn abandon(id: &str, reason: &str, trailers: &[String]) -> Result<u8, Refusal> {
     }
     let context = Context::open()?;
     let number = work_number(id)?;
-    let work = context.record(layout::WORK_DIR, id)?;
+    let work = context.work(id)?;
     let stage = context.journal.stage(number);
     if stage.is_finished() {
         return Err(refused(format!(
@@ -239,7 +243,7 @@ fn abandon(id: &str, reason: &str, trailers: &[String]) -> Result<u8, Refusal> {
         },
     );
     let message = message(
-        &format!("[PLAN]({area}): work {id} abandoned"),
+        &config::fill(&context.repo.config.subject_abandoned, area, id),
         &format!("{}\nReason: {}", work.title, reason.trim()),
         &format!("Slipway-Work: {id}"),
         trailers,
@@ -255,7 +259,7 @@ fn state(id: Option<&str>) -> Result<u8, Refusal> {
         if !works.iter().any(|(n, _)| *n == number) {
             return Err(refused(format!(
                 "{id} is not in the plan: no file {}/{id}.rs",
-                layout::WORK_DIR
+                context.repo.config.work_dir()
             )));
         }
     }
@@ -294,7 +298,7 @@ fn close(id: &str, trailers: &[String]) -> Result<u8, Refusal> {
         _ => return Err(usage(format!("{id} is not a slice id of the form s0001"))),
     };
     let context = Context::open()?;
-    let slice = context.record(layout::SLICE_DIR, id)?;
+    let slice = context.slice(id)?;
     if let Some(file) = context.journal.closed_slices.get(&number) {
         return Err(refused(format!(
             "slice {id} is already closed by event {file}"
@@ -322,7 +326,7 @@ fn close(id: &str, trailers: &[String]) -> Result<u8, Refusal> {
     let area = first_work.area(&format!("w{first:04}"))?;
     let event = Event::new(Subject::Slice(number), time::now(), Kind::Closed);
     let message = message(
-        &format!("[PLAN]({area}): slice {id} closed"),
+        &config::fill(&context.repo.config.subject_slice_closed, area, id),
         &slice.title,
         &format!("Slipway-Slice: {id}"),
         trailers,
@@ -340,9 +344,8 @@ impl Context {
     /// Открывает репозиторий и сворачивает журнал. Несворачиваемый журнал —
     /// отказ: новое событие поверх нарушения ничего не прояснит.
     fn open() -> Result<Context, Refusal> {
-        let repo =
-            git::Repo::discover(Path::new(".")).ok_or_else(|| usage("not a git repository"))?;
-        let dir = repo.root.join(layout::JOURNAL_DIR);
+        let repo = git::Repo::discover(Path::new(".")).map_err(usage)?;
+        let dir = repo.root.join(repo.config.journal_dir());
         let (events, read_violations) = slipway_journal::read_dir(&dir)
             .map_err(|error| usage(format!("journal {} not read: {error}", dir.display())))?;
         let (journal, fold_violations) = fold(&events);
@@ -355,6 +358,16 @@ impl Context {
         Ok(Context { repo, journal })
     }
 
+    /// Запись работы из плана.
+    fn work(&self, id: &str) -> Result<Record, Refusal> {
+        self.record(&self.repo.config.work_dir(), id)
+    }
+
+    /// Запись среза из плана.
+    fn slice(&self, id: &str) -> Result<Record, Refusal> {
+        self.record(&self.repo.config.slice_dir(), id)
+    }
+
     /// Запись плана `<каталог>/<id>.rs`.
     fn record(&self, dir: &str, id: &str) -> Result<Record, Refusal> {
         let path = self.repo.root.join(dir).join(format!("{id}.rs"));
@@ -365,7 +378,7 @@ impl Context {
 
     /// Все работы плана по порядку номеров.
     fn works(&self) -> Result<Vec<(u32, Record)>, Refusal> {
-        let dir = self.repo.root.join(layout::WORK_DIR);
+        let dir = self.repo.root.join(self.repo.config.work_dir());
         let entries = fs::read_dir(&dir)
             .map_err(|error| usage(format!("plan {} not read: {error}", dir.display())))?;
         let mut works = Vec::new();
@@ -445,10 +458,7 @@ pub fn run_import(args: &[OsString]) -> u8 {
 fn import(basis: &str, close_slices: bool, trailers: &[String]) -> Result<u8, Refusal> {
     let context = Context::open()?;
     let basis_number = work_number(basis)?;
-    let area = context
-        .record(layout::WORK_DIR, basis)?
-        .area(basis)?
-        .to_owned();
+    let area = context.work(basis)?.area(basis)?.to_owned();
     let root = &context.repo.root;
 
     // История идёт от новых коммитов к старым: первый встреченный — последний.
@@ -485,12 +495,13 @@ fn import(basis: &str, close_slices: bool, trailers: &[String]) -> Result<u8, Re
         let Some(commit) = latest.get(number) else {
             continue;
         };
-        let tree = proof::content_hash(root, commit).ok_or_else(|| {
-            usage(format!(
-                "the tree of commit {} cannot be read",
-                short(commit)
-            ))
-        })?;
+        let tree = proof::content_hash(root, &context.repo.config.journal_dir(), commit)
+            .ok_or_else(|| {
+                usage(format!(
+                    "the tree of commit {} cannot be read",
+                    short(commit)
+                ))
+            })?;
         events.push(Event::new(
             Subject::Work(*number),
             at.clone(),
@@ -534,7 +545,7 @@ fn import(basis: &str, close_slices: bool, trailers: &[String]) -> Result<u8, Re
         listed(&closed)
     );
     let message = message(
-        &format!("[PLAN]({area}): journal restored from history"),
+        &config::fill(&context.repo.config.subject_imported, &area, basis),
         &body,
         &format!("Slipway-Work: {basis}"),
         trailers,
@@ -604,7 +615,7 @@ fn message(subject: &str, body: &str, basis: &str, trailers: &[String]) -> Strin
 /// Записывает события в журнал и коммитит ровно их. Если коммит не создан,
 /// записанные файлы удаляются: событие без коммита — не история.
 fn record_and_commit(repo: &git::Repo, events: Vec<Event>, message: &str) -> Result<u8, Refusal> {
-    let journal = repo.root.join(layout::JOURNAL_DIR);
+    let journal = repo.root.join(repo.config.journal_dir());
     let mut written: Vec<PathBuf> = Vec::new();
     for event in events {
         let mut attempt = 0;

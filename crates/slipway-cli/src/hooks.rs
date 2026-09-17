@@ -52,9 +52,12 @@ pub fn install(args: &[OsString]) -> u8 {
         eprintln!("hooks: install");
         return 2;
     }
-    let Some(repo) = git::Repo::discover(Path::new(".")) else {
-        eprintln!("hooks install: not a git repository");
-        return 2;
+    let repo = match git::Repo::discover(Path::new(".")) {
+        Ok(repo) => repo,
+        Err(problem) => {
+            eprintln!("hooks install: {problem}");
+            return 2;
+        }
     };
     let dir = repo.root.join(layout::HOOKS_DIR);
     for (name, call) in HOOKS {
@@ -91,9 +94,12 @@ pub fn install(args: &[OsString]) -> u8 {
 /// без журнала сохраняется доказательство. Если оно уже есть, дерево без
 /// журнала не изменилось, и калитка проверяет только журнал.
 fn pre_commit() -> u8 {
-    let Some(repo) = git::Repo::discover(Path::new(".")) else {
-        eprintln!("pre-commit: not a git repository");
-        return 2;
+    let repo = match git::Repo::discover(Path::new(".")) {
+        Ok(repo) => repo,
+        Err(problem) => {
+            eprintln!("pre-commit: {problem}");
+            return 2;
+        }
     };
     let work = repo.git_dir.join(layout::COMMIT_TREE_DIR);
     let tree = work.join("tree");
@@ -101,7 +107,7 @@ fn pre_commit() -> u8 {
         eprintln!("pre-commit: {problem}");
         return 2;
     }
-    let hash = proof::index_hash(&repo.root);
+    let hash = proof::index_hash(&repo.root, &repo.config.journal_dir());
     let proven = hash
         .as_deref()
         .and_then(|hash| proof::verdict(&repo.git_dir, hash));
@@ -261,9 +267,12 @@ fn run_gate(repo: &git::Repo, tree: &Path, journal_only: bool) -> (u8, Option<St
 /// git передаёт на стандартный ввод строки
 /// `<локальная ссылка> <локальный sha> <удалённая ссылка> <удалённый sha>`.
 fn pre_push(input: impl BufRead) -> u8 {
-    let Some(repo) = git::Repo::discover(Path::new(".")) else {
-        eprintln!("pre-push: not a git repository");
-        return 2;
+    let repo = match git::Repo::discover(Path::new(".")) {
+        Ok(repo) => repo,
+        Err(problem) => {
+            eprintln!("pre-push: {problem}");
+            return 2;
+        }
     };
     let list = repo.git_dir.join("info").join(layout::EXTERNAL_NAMES);
     let names = gate::read_external_names(&list);

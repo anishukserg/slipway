@@ -1,5 +1,6 @@
 //! Запуск git.
 
+use crate::config::Config;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -34,20 +35,29 @@ pub fn succeeds(dir: &Path, args: &[&str]) -> bool {
         .is_ok_and(|status| status.success())
 }
 
-/// Репозиторий: корень рабочего дерева и каталог git.
+/// Репозиторий: корень рабочего дерева, каталог git и настройка рабочего
+/// дерева (решение 20).
 pub struct Repo {
     pub root: PathBuf,
     pub git_dir: PathBuf,
+    pub config: Config,
 }
 
 impl Repo {
-    /// Репозиторий, которому принадлежит каталог `dir`.
-    pub fn discover(dir: &Path) -> Option<Repo> {
-        let root = read(dir, &["rev-parse", "--show-toplevel"])?;
-        let git_dir = read(dir, &["rev-parse", "--absolute-git-dir"])?;
-        Some(Repo {
-            root: PathBuf::from(root),
+    /// Репозиторий, которому принадлежит каталог `dir`, с настройкой из его
+    /// рабочего дерева. `Err` — не репозиторий или негодная настройка: по
+    /// испорченной настройке инструмент не работает.
+    pub fn discover(dir: &Path) -> Result<Repo, String> {
+        let root = read(dir, &["rev-parse", "--show-toplevel"])
+            .ok_or_else(|| "not a git repository".to_owned())?;
+        let git_dir = read(dir, &["rev-parse", "--absolute-git-dir"])
+            .ok_or_else(|| "not a git repository".to_owned())?;
+        let root = PathBuf::from(root);
+        let config = Config::read_dir(&root)?;
+        Ok(Repo {
+            root,
             git_dir: PathBuf::from(git_dir),
+            config,
         })
     }
 }

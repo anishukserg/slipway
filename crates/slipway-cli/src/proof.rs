@@ -13,11 +13,12 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 
-/// Хэш дерева без каталога журнала; `tree` — любой указатель на дерево: sha
-/// дерева, коммит, `HEAD`.
-pub fn content_hash(root: &Path, tree: &str) -> Option<String> {
+/// Хэш дерева без каталога журнала; `journal` — каталог журнала из настройки
+/// того дерева, о котором идёт речь (решение 20), `tree` — любой указатель на
+/// дерево: sha дерева, коммит, `HEAD`.
+pub fn content_hash(root: &Path, journal: &str, tree: &str) -> Option<String> {
     let listing = git::read(root, &["ls-tree", "-r", "-z", "--full-tree", tree])?;
-    let journal = format!("{}/", layout::JOURNAL_DIR);
+    let journal = format!("{journal}/");
     let mut kept = String::new();
     for entry in listing.split('\0').filter(|entry| !entry.is_empty()) {
         let path = entry.split_once('\t').map_or("", |(_, path)| path);
@@ -31,9 +32,9 @@ pub fn content_hash(root: &Path, tree: &str) -> Option<String> {
 
 /// Хэш дерева коммита, который сейчас собирается: индекса, на который
 /// указывает GIT_INDEX_FILE хука.
-pub fn index_hash(root: &Path) -> Option<String> {
+pub fn index_hash(root: &Path, journal: &str) -> Option<String> {
     let tree = git::read(root, &["write-tree"])?;
-    content_hash(root, &tree)
+    content_hash(root, journal, &tree)
 }
 
 /// git-хэши файлов по содержимому, без фильтров git, в порядке путей; `None` —

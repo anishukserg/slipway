@@ -10,6 +10,10 @@
 //! чтобы кэш переживал выгрузки; cargo запускается из самого дерева, чтобы
 //! тулчейн брался из его `rust-toolchain.toml`.
 //!
+//! Настройку (`slipway.toml`) калитка читает из проверяемого дерева, как
+//! `Cargo.toml` и `deny.toml`: оттуда берутся каталог журнала и манифест крейта
+//! документов (решение 20).
+//!
 //! Шаги, от дешёвых к дорогим:
 //!
 //! 1. внешние имена — по локальному списку в каталоге git (решение 9); без
@@ -40,6 +44,7 @@
 //! Код возврата: 0 — пройдено; 1 — шаг упал; 2 — ошибка запуска. Последняя
 //! строка — `GATE OK (<n> of <m>; …)` или `GATE FAIL: <step>`.
 
+use crate::config::Config;
 use crate::{git, layout, proof};
 use slipway_journal::Kind;
 use std::ffi::OsString;
@@ -230,6 +235,7 @@ struct Gate {
     tree: PathBuf,
     git_dir: PathBuf,
     target: PathBuf,
+    config: Config,
     journal_only: bool,
     passed: usize,
     skipped: Vec<&'static str>,
@@ -238,10 +244,14 @@ struct Gate {
 impl Gate {
     fn open(args: &Args) -> Result<Gate, Fail> {
         let start = args.repo.as_deref().unwrap_or(Path::new("."));
-        let repo = git::Repo::discover(start).ok_or_else(|| start_fail("not a git repository"))?;
+        let repo = git::Repo::discover(start).map_err(start_fail)?;
         let tree = args.tree.clone().unwrap_or_else(|| repo.root.clone());
         let tree = fs::canonicalize(&tree)
             .map_err(|_| start_fail(format!("no directory {}", tree.display())))?;
+        // Настройка — из проверяемого дерева, как Cargo.toml и deny.toml: иначе
+        // правка настройки в рабочей копии меняла бы вердикт для чужого дерева
+        // (решение 20).
+        let config = Config::read_dir(&tree).map_err(start_fail)?;
         let target = repo.root.join(layout::GATE_TARGET);
         fs::create_dir_all(&target)
             .map_err(|_| start_fail(format!("cannot create {}", target.display())))?;
@@ -250,6 +260,7 @@ impl Gate {
             tree,
             git_dir: repo.git_dir,
             target,
+            config,
             journal_only: args.journal_only,
             passed: 0,
             skipped: Vec::new(),
@@ -409,11 +420,12 @@ impl Gate {
     /// Калитка журнала: дерево без журнала уже проверено, осталось собрать
     /// крейт документов — сборка сворачивает журнал (решение 15).
     fn check_journal_build(mut self) -> Result<String, Fail> {
-        let manifest = self.tree.join(layout::DOC_MANIFEST);
+        let manifest = self.tree.join(self.config.doc_manifest());
         if !manifest.is_file() {
-            return Err(start_fail(
-                "no doc/Cargo.toml in the tree — the journal cannot be folded",
-            ));
+            return Err(start_fail(format!(
+                "no {} in the tree — the journal cannot be folded",
+                self.config.doc_manifest()
+            )));
         }
         let target = self.target.clone();
         let mut build = self.cargo(&target);
@@ -515,7 +527,7 @@ impl Gate {
     /// журнала совпадает с деревом события. Законность переходов проверяет
     /// сборка крейта документов.
     fn journal(&mut self) -> Result<(), Fail> {
-        let dir = self.tree.join(layout::JOURNAL_DIR);
+        let dir = self.tree.join(self.config.journal_dir());
         if !dir.is_dir() {
             self.skipped.push("journal");
             return Ok(());
@@ -533,7 +545,9 @@ impl Gate {
                     "{}: commit {commit} is not in the repository",
                     event.file
                 ));
-            } else if proof::content_hash(&self.root, commit).as_deref() != Some(tree.as_str()) {
+            } else if proof::content_hash(&self.root, &self.config.journal_dir(), commit).as_deref()
+                != Some(tree.as_str())
+            {
                 problems.push(format!(
                     "{}: the tree of commit {commit} without the journal differs from the event tree",
                     event.file
@@ -553,10 +567,9 @@ impl Gate {
     /// Файлы событий из HEAD, изменённые или удалённые в дереве. Без HEAD —
     /// первый коммит — сравнивать не с чем.
     fn changed_event_files(&self) -> Vec<String> {
-        let Some(listing) = git::read(
-            &self.root,
-            &["ls-tree", "-r", "-z", "HEAD", "--", layout::JOURNAL_DIR],
-        ) else {
+        let journal = self.config.journal_dir();
+        let Some(listing) = git::read(&self.root, &["ls-tree", "-r", "-z", "HEAD", "--", &journal])
+        else {
             return Vec::new();
         };
         let mut problems = Vec::new();

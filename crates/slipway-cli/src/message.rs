@@ -18,20 +18,18 @@
 //! (решение 18). Последняя строка вывода — `MSG-CHECK OK (<n>)` или
 //! `MSG-CHECK REFUSED: <k> из <n>`.
 //!
+//! Правила темы — набор типов, предел длины, каталоги работ и срезов и ссылка
+//! на правила коммитов продукта — берутся из настройки того же дерева, что и
+//! таксономия: из индекса или из дерева проверяемого коммита (решение 20).
+//! Негодная настройка — ошибка запуска, а не отказ проверки.
+//!
 //! Код возврата: 0 — принято; 1 — отвергнуто (причины в stderr); 2 — ошибка
 //! запуска.
 
-use crate::{git, layout};
+use crate::config::Config;
+use crate::git;
 use std::ffi::OsString;
 use std::path::Path;
-
-/// Типы темы — закрытый набор.
-pub const TYPES: [&str; 8] = [
-    "FEAT", "FIX", "REFACTOR", "TEST", "DOCS", "ADR", "PLAN", "CHORE",
-];
-
-/// Предел длины темы в символах.
-const SUBJECT_LIMIT: usize = 72;
 
 /// Ключ трейлера основания — единица работы.
 const WORK_TRAILER: &str = "Slipway-Work:";
@@ -57,9 +55,9 @@ pub fn run(args: &[OsString]) -> u8 {
         return 2;
     };
     match check_in_index(Path::new("."), &text, form_only) {
-        Ok(errors) if errors.is_empty() => 0,
-        Ok(errors) => {
-            eprint!("{}", report(&errors));
+        Ok(checked) if checked.problems.is_empty() => 0,
+        Ok(checked) => {
+            eprint!("{}", checked.report());
             1
         }
         Err(problem) => {
@@ -85,13 +83,13 @@ fn run_range(range: &OsString) -> u8 {
     let mut refused = 0;
     for &commit in &commits {
         match check_commit(dir, commit) {
-            Ok(errors) if errors.is_empty() => {}
-            Ok(errors) => {
+            Ok(checked) if checked.problems.is_empty() => {}
+            Ok(checked) => {
                 refused += 1;
                 let short = commit.get(..12).unwrap_or(commit);
                 let subject =
                     git::read(dir, &["log", "-1", "--format=%s", commit]).unwrap_or_default();
-                eprint!("{short} {}: {}", subject.trim(), report(&errors));
+                eprint!("{short} {}: {}", subject.trim(), checked.report());
             }
             Err(problem) => {
                 eprintln!("msg-check: {commit}: {problem}");
@@ -108,14 +106,40 @@ fn run_range(range: &OsString) -> u8 {
     }
 }
 
-/// Проверяет сообщение по индексу репозитория в `dir`: области — из таксономии
-/// в индексе, основания — из индекса. `Err` — проверку не из чего выполнить.
-pub fn check_in_index(dir: &Path, text: &str, form_only: bool) -> Result<Vec<String>, String> {
+/// Итог проверки: причины отказа и правила, по которым проверяли.
+pub struct Checked {
+    /// Причины отказа; пустой список — сообщение принято.
+    pub problems: Vec<String>,
+    config: Config,
+}
+
+impl Checked {
+    /// Текст отказа: ссылка на правила коммитов продукта и причины по одной в
+    /// строке. Без настройки называются правила Slipway, а не документ чужого
+    /// реестра (решения 19 и 20).
+    pub fn report(&self) -> String {
+        let mut text = format!(
+            "msg-check: message refused ({}):\n",
+            self.config.commit_rules
+        );
+        for problem in &self.problems {
+            text.push_str("  - ");
+            text.push_str(problem);
+            text.push('\n');
+        }
+        text
+    }
+}
+
+/// Проверяет сообщение по индексу репозитория в `dir`: правила — из настройки
+/// в индексе, области — из таксономии в индексе, основания — из индекса.
+/// `Err` — проверку не из чего выполнить.
+pub fn check_in_index(dir: &Path, text: &str, form_only: bool) -> Result<Checked, String> {
     check_against(dir, "", "in the index", text, form_only)
 }
 
 /// Проверяет сообщение коммита по дереву этого же коммита.
-pub fn check_commit(dir: &Path, commit: &str) -> Result<Vec<String>, String> {
+pub fn check_commit(dir: &Path, commit: &str) -> Result<Checked, String> {
     let text = git::read(dir, &["log", "-1", "--format=%B", commit])
         .ok_or_else(|| format!("message of commit {commit} cannot be read"))?;
     check_against(
@@ -135,15 +159,18 @@ fn check_against(
     place: &str,
     text: &str,
     form_only: bool,
-) -> Result<Vec<String>, String> {
-    let taxonomy = format!("{tree}:{}", layout::TAXONOMY);
+) -> Result<Checked, String> {
+    // Правила — из того же дерева, что и таксономия: иначе правка настройки в
+    // рабочей копии меняла бы вердикт для чужого дерева (решение 20).
+    let config = Config::read_tree(dir, tree)?;
+    let taxonomy = format!("{tree}:{}", config.taxonomy());
     let scopes = git::read(dir, &["show", &taxonomy])
         .map(|text| subsystem_scopes(&text))
         .unwrap_or_default();
     if scopes.is_empty() {
         return Err(format!(
             "no Subsystem axis values {place} ({})",
-            layout::TAXONOMY
+            config.taxonomy()
         ));
     }
     let in_tree = |path: &str| {
@@ -151,18 +178,8 @@ fn check_against(
         git::succeeds(dir, &["cat-file", "-e", &spec])
     };
     let exists: Option<&dyn Fn(&str) -> bool> = if form_only { None } else { Some(&in_tree) };
-    Ok(problems(text, &scopes, exists))
-}
-
-/// Текст отказа: ссылка на правило и причины по одной в строке.
-pub fn report(errors: &[String]) -> String {
-    let mut text = format!("msg-check: message refused ({}):\n", layout::COMMIT_RULES);
-    for error in errors {
-        text.push_str("  - ");
-        text.push_str(error);
-        text.push('\n');
-    }
-    text
+    let problems = problems(text, &scopes, exists, &config);
+    Ok(Checked { problems, config })
 }
 
 /// Значения оси подсистем из текста таксономии, в нижнем регистре.
@@ -194,11 +211,13 @@ pub fn subsystem_scopes(taxonomy: &str) -> Vec<String> {
 /// Причины отказа сообщения; пустой список — сообщение принято.
 ///
 /// `exists` отвечает, есть ли файл плана — работы или среза — в дереве
-/// коммита; без неё проверяется только форма.
+/// коммита; без неё проверяется только форма. `config` — правила того дерева,
+/// по которым идёт проверка (решение 20).
 pub fn problems(
     text: &str,
     scopes: &[String],
     exists: Option<&dyn Fn(&str) -> bool>,
+    config: &Config,
 ) -> Vec<String> {
     let mut errors = Vec::new();
     let lines: Vec<&str> = text.lines().filter(|line| !line.starts_with('#')).collect();
@@ -206,10 +225,10 @@ pub fn problems(
 
     match parse_subject(subject) {
         Some((kind, subject_scopes, summary)) => {
-            if !TYPES.contains(&kind) {
+            if !config.commit_types.iter().any(|known| known == kind) {
                 errors.push(format!(
                     "type [{kind}] is not in the set: {}",
-                    TYPES.join(" ")
+                    config.commit_types.join(" ")
                 ));
             }
             for scope in subject_scopes.split(',') {
@@ -224,9 +243,10 @@ pub fn problems(
                 errors.push("subject ends with a period".to_owned());
             }
             let length = subject.chars().count();
-            if length > SUBJECT_LIMIT {
+            if length > config.subject_limit {
                 errors.push(format!(
-                    "subject is longer than {SUBJECT_LIMIT} characters ({length})"
+                    "subject is longer than {} characters ({length})",
+                    config.subject_limit
                 ));
             }
         }
@@ -248,13 +268,13 @@ pub fn problems(
         );
     } else if let Some(exists) = exists {
         for work in works {
-            let path = format!("{}/{work}.rs", layout::WORK_DIR);
+            let path = format!("{}/{work}.rs", config.work_dir());
             if !exists(&path) {
                 errors.push(format!("work {work} is not in the commit tree ({path})"));
             }
         }
         for slice in slices {
-            let path = format!("{}/{slice}.rs", layout::SLICE_DIR);
+            let path = format!("{}/{slice}.rs", config.slice_dir());
             if !exists(&path) {
                 errors.push(format!("slice {slice} is not in the commit tree ({path})"));
             }
@@ -336,7 +356,7 @@ mod tests {
             "[PLAN](cli): закрыт срез s0001\n\nSlipway-Slice: s0001\n",
         ] {
             assert_eq!(
-                problems(message, &scopes(), Some(&planned)),
+                problems(message, &scopes(), Some(&planned), &Config::default()),
                 Vec::<String>::new(),
                 "{message}"
             );
@@ -396,7 +416,7 @@ mod tests {
             ),
         ];
         for (message, expected) in cases {
-            let found = problems(message, &scopes(), Some(&planned));
+            let found = problems(message, &scopes(), Some(&planned), &Config::default());
             assert!(
                 found.iter().any(|problem| problem.contains(expected)),
                 "«{message}»: ожидалось «{expected}», получено {found:?}"
@@ -407,12 +427,62 @@ mod tests {
     #[test]
     fn form_only_does_not_look_for_work() {
         let message = "[FEAT](cli): суть\n\nSlipway-Work: w0099";
-        assert!(problems(message, &scopes(), None).is_empty());
+        assert!(problems(message, &scopes(), None, &Config::default()).is_empty());
+    }
+
+    /// Чужая раскладка: свой набор типов, свой предел темы и свой корень
+    /// реестра (решение 20).
+    #[test]
+    fn configured_rules_replace_the_defaults() {
+        let config = Config {
+            doc: "docs/registry".to_owned(),
+            commit_types: vec!["FEAT".to_owned(), "CHANGE".to_owned()],
+            subject_limit: 90,
+            ..Config::default()
+        };
+        // Пятнадцать символов «[CHANGE](cli): » и семьдесят «я»: больше прежних
+        // семидесяти двух и меньше настроенных девяноста.
+        let long = format!("[CHANGE](cli): {}\n\nSlipway-Work: w0001", "я".repeat(70));
+        assert_eq!(
+            problems(&long, &scopes(), None, &config),
+            Vec::<String>::new()
+        );
+        assert!(
+            problems(&long, &scopes(), None, &Config::default())
+                .iter()
+                .any(|problem| problem.contains("longer than 72 characters (85)")),
+            "прежний предел не применён к контрольному сообщению"
+        );
+
+        let refused = problems(
+            "[FIX](cli): суть\n\nSlipway-Work: w0001",
+            &scopes(),
+            None,
+            &config,
+        );
+        assert!(
+            refused
+                .iter()
+                .any(|problem| problem == "type [FIX] is not in the set: FEAT CHANGE"),
+            "{refused:?}"
+        );
+
+        let planned = |path: &str| path == "docs/registry/work/w0001.rs";
+        let message = "[FEAT](cli): суть\n\nSlipway-Work: w0002";
+        let missing = problems(message, &scopes(), Some(&planned), &config);
+        assert!(
+            missing
+                .iter()
+                .any(|problem| problem.contains("docs/registry/work/w0002.rs")),
+            "{missing:?}"
+        );
+        let message = "[FEAT](cli): суть\n\nSlipway-Work: w0001";
+        assert!(problems(message, &scopes(), Some(&planned), &config).is_empty());
     }
 
     #[test]
     fn comment_lines_are_not_the_subject() {
         let message = "# комментарий git\n[FEAT](cli): суть\n\nSlipway-Work: w0001";
-        assert!(problems(message, &scopes(), Some(&planned)).is_empty());
+        assert!(problems(message, &scopes(), Some(&planned), &Config::default()).is_empty());
     }
 }
