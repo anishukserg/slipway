@@ -743,23 +743,108 @@ fn walk(root: &Path) -> std::io::Result<Vec<PathBuf>> {
 }
 
 /// Цели ссылок `](цель)` без пробелов, кроме внешних адресов и якорей.
+///
+/// Код документа ссылкой не считается: в тексте о правилах коммитов форма
+/// темы — пример, а не путь к файлу (работа 31).
 fn relative_links(text: &str) -> Vec<&str> {
     let mut links = Vec::new();
-    let mut rest = text;
-    while let Some(at) = rest.find("](") {
-        rest = &rest[at + 2..];
-        let end = rest
-            .find(|c: char| c == ')' || c.is_whitespace())
-            .unwrap_or(rest.len());
-        let target = &rest[..end];
-        let external = ["http:", "https:", "mailto:", "#"]
-            .iter()
-            .any(|prefix| target.starts_with(prefix));
-        if rest[end..].starts_with(')') && !target.is_empty() && !external {
-            links.push(target);
+    for prose in prose_segments(text) {
+        let mut rest = prose;
+        while let Some(at) = rest.find("](") {
+            rest = &rest[at + 2..];
+            let end = rest
+                .find(|c: char| c == ')' || c.is_whitespace())
+                .unwrap_or(rest.len());
+            let target = &rest[..end];
+            let external = ["http:", "https:", "mailto:", "#"]
+                .iter()
+                .any(|prefix| target.starts_with(prefix));
+            if rest[end..].starts_with(')') && !target.is_empty() && !external {
+                links.push(target);
+            }
         }
     }
     links
+}
+
+/// Куски текста вне кода: огороженные блоки и код в обратных кавычках
+/// выброшены.
+///
+/// Ограда — три и больше знаков `` ` `` или `~` в начале строки; закрывающая
+/// ограда того же знака и не короче открывающей, а незакрытая съедает текст до
+/// конца, как в CommonMark. Отступ в четыре пробела кодом здесь не считается:
+/// в документах Slipway код пишут оградой.
+fn prose_segments(text: &str) -> Vec<&str> {
+    let mut segments = Vec::new();
+    let mut fence: Option<(char, usize)> = None;
+    for line in text.lines() {
+        let trimmed = line.trim_start();
+        let mark = trimmed.chars().next().filter(|c| *c == '`' || *c == '~');
+        if let Some(mark) = mark {
+            let run = trimmed.chars().take_while(|c| *c == mark).count();
+            if run >= 3 {
+                match fence {
+                    Some((open, len)) if open == mark && run >= len => {
+                        fence = None;
+                        continue;
+                    }
+                    Some(_) => {}
+                    None => {
+                        fence = Some((mark, run));
+                        continue;
+                    }
+                }
+            }
+        }
+        if fence.is_none() {
+            segments.extend(outside_code_spans(line));
+        }
+    }
+    segments
+}
+
+/// Куски строки вне кода в обратных кавычках: код закрывается таким же числом
+/// кавычек подряд, а незакрытый — концом строки.
+fn outside_code_spans(line: &str) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let bytes = line.as_bytes();
+    let mut at = 0;
+    let mut start = 0;
+    while at < bytes.len() {
+        if bytes[at] != b'`' {
+            at += 1;
+            continue;
+        }
+        let open = bytes[at..].iter().take_while(|byte| **byte == b'`').count();
+        parts.push(&line[start..at]);
+        let mut cursor = at + open;
+        let close = loop {
+            let Some(next) = line[cursor..].find('`') else {
+                break None;
+            };
+            let found = cursor + next;
+            let run = bytes[found..]
+                .iter()
+                .take_while(|byte| **byte == b'`')
+                .count();
+            if run == open {
+                break Some(found + run);
+            }
+            cursor = found + run;
+        };
+        match close {
+            Some(end) => {
+                at = end;
+                start = end;
+            }
+            None => {
+                at = bytes.len();
+                start = bytes.len();
+            }
+        }
+    }
+    parts.push(&line[start..]);
+    parts
 }
 
 /// Минимальная версия из `rust-version = "1.83"` в виде тулчейна `1.83.0`.
@@ -890,6 +975,18 @@ mod tests {
         let text =
             "[a](b.md) [c](https://x.org) [d](#якорь) [e](dir/f.md#раздел) [g](with space) [h]()";
         assert_eq!(relative_links(text), ["b.md", "dir/f.md#раздел"]);
+    }
+
+    #[test]
+    fn code_in_a_document_is_not_a_link() {
+        // Форма темы коммита в тексте документа — код, а не ссылка на файл
+        // «область»: шаг отвергал документ за форму записи (работа 31).
+        let text = concat!(
+            "тема `[ТИП](область): суть`\n\n",
+            "```text\n[FEAT](cli): суть\n```\n\n",
+            "а это ссылка: [файл](real.md)\n"
+        );
+        assert_eq!(relative_links(text), ["real.md"]);
     }
 
     #[test]

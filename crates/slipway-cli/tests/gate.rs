@@ -85,6 +85,21 @@ fn broken_markdown_link_is_refused_even_inside_a_git_directory() {
         "{}",
         run.output()
     );
+
+    // Код в документе — не ссылка: форма темы коммита в обратных кавычках и
+    // пример в огороженном блоке кода не отвергают документ (работа 31).
+    repo.write(
+        "doc.md",
+        "# Документ\n\nТема `[ТИП](область): суть`.\n\n```text\n[FEAT](cli): суть\n```\n",
+    );
+    let run = repo.tool(&["gate"]);
+    assert!(!run.stdout.contains("битая ссылка"), "{}", run.output());
+    assert!(
+        run.verdict()
+            .starts_with("GATE FAIL: в дереве нет Cargo.toml"),
+        "{}",
+        run.output()
+    );
 }
 
 #[test]
