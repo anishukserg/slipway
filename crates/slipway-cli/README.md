@@ -3,14 +3,14 @@
 Команда `cargo slipway` [Slipway](https://github.com/anishukserg/slipway): правила коммитов, калитка, хуки git и журнал работы (решения 8, 14 и 15).
 
 ```text
-cargo slipway commit -F <сообщение> [--log <файл>] [--timeout <сек>] -- <пути…>
-cargo slipway msg-check [--form-only] <сообщение> | --range <диапазон>
-cargo slipway gate [--repo <каталог>] [--journal-only] [<дерево>]
-cargo slipway hook pre-commit | commit-msg <сообщение> | pre-push <удалённый> <адрес>
+cargo slipway commit -F <message> [--log <file>] [--timeout <seconds>] -- <paths…>
+cargo slipway msg-check [--form-only] <message> | --range <range>
+cargo slipway gate [--repo <directory>] [--journal-only] [<tree>]
+cargo slipway hook pre-commit | commit-msg <message> | pre-push <remote> <url>
 cargo slipway hooks install
 cargo slipway work start | land | drop | state …
 cargo slipway slice close <sNNNN>
-cargo slipway journal hash [<ревизия>] | import --work <wNNNN> [--close-finished-slices]
+cargo slipway journal hash [<revision>] | import --work <wNNNN> [--close-finished-slices]
 ```
 
 - **Калитка** проверяет дерево коммита, а не рабочую копию: форматирование, clippy, тесты, атакующие doctest со сверкой кодов ошибок, документацию, сборку на минимальной версии Rust и политику зависимостей.

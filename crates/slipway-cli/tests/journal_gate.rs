@@ -71,7 +71,7 @@ fn committed_event_file_cannot_change_or_disappear() {
     let run = repo.tool(&["gate"]);
     assert!(
         run.verdict()
-            .starts_with("GATE FAIL: в дереве нет Cargo.toml"),
+            .starts_with("GATE FAIL: no Cargo.toml in the tree"),
         "{}",
         run.output()
     );
@@ -79,12 +79,12 @@ fn committed_event_file_cannot_change_or_disappear() {
     repo.write(&path, &text.replace("started", "started "));
     let run = repo.tool(&["gate"]);
     assert!(
-        run.stdout.contains("файл события изменён"),
+        run.stdout.contains("event file changed"),
         "{}",
         run.output()
     );
     assert!(
-        run.verdict().starts_with("GATE FAIL: журнал расходится"),
+        run.verdict().starts_with("GATE FAIL: journal differs"),
         "{}",
         run.output()
     );
@@ -92,7 +92,7 @@ fn committed_event_file_cannot_change_or_disappear() {
     fs::remove_file(repo.path(&path)).expect("файл удалён");
     let run = repo.tool(&["gate"]);
     assert!(
-        run.stdout.contains("файл события удалён"),
+        run.stdout.contains("event file deleted"),
         "{}",
         run.output()
     );
@@ -116,7 +116,7 @@ fn landed_event_must_match_its_commit() {
     let run = repo.tool(&["gate"]);
     assert!(
         run.verdict()
-            .starts_with("GATE FAIL: в дереве нет Cargo.toml"),
+            .starts_with("GATE FAIL: no Cargo.toml in the tree"),
         "{}",
         run.output()
     );
@@ -124,14 +124,18 @@ fn landed_event_must_match_its_commit() {
     repo.write(path, &landed(&"0".repeat(40), &commit));
     let run = repo.tool(&["gate"]);
     assert!(
-        run.stdout.contains("расходится с деревом события"),
+        run.stdout.contains("differs from the event tree"),
         "{}",
         run.output()
     );
 
     repo.write(path, &landed(&right, &"1".repeat(40)));
     let run = repo.tool(&["gate"]);
-    assert!(run.stdout.contains("нет в репозитории"), "{}", run.output());
+    assert!(
+        run.stdout.contains("is not in the repository"),
+        "{}",
+        run.output()
+    );
 }
 
 #[test]
@@ -158,11 +162,11 @@ fn journal_only_commit_reuses_the_proof_of_its_tree() {
     repo.git(&["add", &path]);
     let output = attempt(&repo);
     assert!(
-        output.contains("дерево без журнала уже проверено"),
+        output.contains("the tree without the journal is already checked"),
         "{output}"
     );
     assert!(
-        output.contains("GATE FAIL: в дереве нет doc/Cargo.toml"),
+        output.contains("GATE FAIL: no doc/Cargo.toml in the tree"),
         "{output}"
     );
 
@@ -170,9 +174,9 @@ fn journal_only_commit_reuses_the_proof_of_its_tree() {
     repo.write("a.txt", "b\n");
     repo.git(&["add", "a.txt"]);
     let output = attempt(&repo);
-    assert!(!output.contains("уже проверено"), "{output}");
+    assert!(!output.contains("already checked"), "{output}");
     assert!(
-        output.contains("GATE FAIL: в дереве нет Cargo.toml"),
+        output.contains("GATE FAIL: no Cargo.toml in the tree"),
         "{output}"
     );
 }

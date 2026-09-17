@@ -1,8 +1,8 @@
 //! Служебные команды журнала (решение 15).
 //!
 //! ```text
-//! cargo slipway journal hash [<ревизия>]
-//! cargo slipway journal import --work <wNNNN> [--close-finished-slices] [--trailer <трейлер>]…
+//! cargo slipway journal hash [<revision>]
+//! cargo slipway journal import --work <wNNNN> [--close-finished-slices] [--trailer <trailer>]…
 //! ```
 //!
 //! `hash` печатает хэш дерева ревизии без каталога журнала — тот, к которому
@@ -20,7 +20,7 @@ pub fn run(args: &[OsString]) -> u8 {
         Some("import") => work::run_import(&args[1..]),
         _ => {
             eprintln!(
-                "journal: hash [<ревизия>] | import --work <wNNNN> [--close-finished-slices]"
+                "journal: hash [<revision>] | import --work <wNNNN> [--close-finished-slices]"
             );
             2
         }
@@ -29,7 +29,7 @@ pub fn run(args: &[OsString]) -> u8 {
 
 fn hash(revision: Option<&str>) -> u8 {
     let Some(repo) = git::Repo::discover(Path::new(".")) else {
-        eprintln!("journal hash: не git-репозиторий");
+        eprintln!("journal hash: not a git repository");
         return 2;
     };
     let revision = revision.unwrap_or("HEAD");
@@ -39,7 +39,7 @@ fn hash(revision: Option<&str>) -> u8 {
             0
         }
         None => {
-            eprintln!("journal hash: ревизия {revision} не читается");
+            eprintln!("journal hash: revision {revision} cannot be read");
             2
         }
     }

@@ -78,6 +78,6 @@ fn timeout_names_the_holder() {
     fs::write(&lock, format!("{}\n", std::process::id())).expect("блокировка записана");
     let run = commit(&repo, "1");
     assert_eq!(run.code, 3, "{}", run.output());
-    let holder = format!("держит процесс {}", std::process::id());
+    let holder = format!("held by process {}", std::process::id());
     assert!(run.verdict().contains(&holder), "{}", run.output());
 }

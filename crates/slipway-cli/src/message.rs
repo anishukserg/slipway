@@ -3,8 +3,8 @@
 //! для коммита закрытия среза, `Slipway-Slice: sNNNN` (решение 15).
 //!
 //! ```text
-//! cargo slipway msg-check [--form-only] <файл сообщения>
-//! cargo slipway msg-check --range <диапазон>
+//! cargo slipway msg-check [--form-only] <message>
+//! cargo slipway msg-check --range <range>
 //! ```
 //!
 //! Без `--form-only` проверяется ещё и то, что каждая работа и каждый срез из
@@ -47,13 +47,13 @@ pub fn run(args: &[OsString]) -> u8 {
         [file] => (false, file),
         _ => {
             eprintln!(
-                "msg-check: нужен файл сообщения или диапазон — msg-check [--form-only] <файл> | --range <диапазон>"
+                "msg-check: a message file or a range is required — msg-check [--form-only] <file> | --range <range>"
             );
             return 2;
         }
     };
     let Ok(text) = std::fs::read_to_string(file) else {
-        eprintln!("msg-check: нужен читаемый файл сообщения");
+        eprintln!("msg-check: a readable message file is required");
         return 2;
     };
     match check_in_index(Path::new("."), &text, form_only) {
@@ -74,11 +74,11 @@ pub fn run(args: &[OsString]) -> u8 {
 fn run_range(range: &OsString) -> u8 {
     let dir = Path::new(".");
     let Some(range) = range.to_str() else {
-        eprintln!("msg-check: диапазон не в UTF-8");
+        eprintln!("msg-check: range is not UTF-8");
         return 2;
     };
     let Some(listing) = git::read(dir, &["rev-list", "--reverse", range, "--"]) else {
-        eprintln!("msg-check: диапазон {range} не читается");
+        eprintln!("msg-check: range {range} cannot be read");
         return 2;
     };
     let commits: Vec<&str> = listing.lines().filter(|line| !line.is_empty()).collect();
@@ -103,7 +103,7 @@ fn run_range(range: &OsString) -> u8 {
         println!("MSG-CHECK OK ({})", commits.len());
         0
     } else {
-        println!("MSG-CHECK REFUSED: {refused} из {}", commits.len());
+        println!("MSG-CHECK REFUSED: {refused} of {}", commits.len());
         1
     }
 }
@@ -111,14 +111,20 @@ fn run_range(range: &OsString) -> u8 {
 /// Проверяет сообщение по индексу репозитория в `dir`: области — из таксономии
 /// в индексе, основания — из индекса. `Err` — проверку не из чего выполнить.
 pub fn check_in_index(dir: &Path, text: &str, form_only: bool) -> Result<Vec<String>, String> {
-    check_against(dir, "", "в индексе", text, form_only)
+    check_against(dir, "", "in the index", text, form_only)
 }
 
 /// Проверяет сообщение коммита по дереву этого же коммита.
 pub fn check_commit(dir: &Path, commit: &str) -> Result<Vec<String>, String> {
     let text = git::read(dir, &["log", "-1", "--format=%B", commit])
-        .ok_or_else(|| format!("сообщение коммита {commit} не читается"))?;
-    check_against(dir, commit, &format!("в дереве {commit}"), &text, false)
+        .ok_or_else(|| format!("message of commit {commit} cannot be read"))?;
+    check_against(
+        dir,
+        commit,
+        &format!("in the tree of {commit}"),
+        &text,
+        false,
+    )
 }
 
 /// Проверка по дереву `tree`: пустая строка — индекс, иначе ревизия; `place`
@@ -136,7 +142,7 @@ fn check_against(
         .unwrap_or_default();
     if scopes.is_empty() {
         return Err(format!(
-            "{place} нет значений оси Subsystem ({})",
+            "no Subsystem axis values {place} ({})",
             layout::TAXONOMY
         ));
     }
@@ -150,10 +156,7 @@ fn check_against(
 
 /// Текст отказа: ссылка на правило и причины по одной в строке.
 pub fn report(errors: &[String]) -> String {
-    let mut text = format!(
-        "msg-check: сообщение отвергнуто ({}):\n",
-        layout::COMMIT_RULES
-    );
+    let mut text = format!("msg-check: message refused ({}):\n", layout::COMMIT_RULES);
     for error in errors {
         text.push_str("  - ");
         text.push_str(error);
@@ -204,53 +207,56 @@ pub fn problems(
     match parse_subject(subject) {
         Some((kind, subject_scopes, summary)) => {
             if !TYPES.contains(&kind) {
-                errors.push(format!("тип [{kind}] не из набора: {}", TYPES.join(" ")));
+                errors.push(format!(
+                    "type [{kind}] is not in the set: {}",
+                    TYPES.join(" ")
+                ));
             }
             for scope in subject_scopes.split(',') {
                 if !scopes.iter().any(|known| known == scope) {
                     errors.push(format!(
-                        "область ({scope}) не значение оси подсистем: {}",
+                        "scope ({scope}) is not a subsystem axis value: {}",
                         scopes.join(" ")
                     ));
                 }
             }
             if summary.ends_with('.') {
-                errors.push("точка в конце темы".to_owned());
+                errors.push("subject ends with a period".to_owned());
             }
             let length = subject.chars().count();
             if length > SUBJECT_LIMIT {
-                errors.push(format!("тема длиннее {SUBJECT_LIMIT} символов ({length})"));
+                errors.push(format!(
+                    "subject is longer than {SUBJECT_LIMIT} characters ({length})"
+                ));
             }
         }
         None => errors.push(format!(
-            "тема не по форме [ТИП](область): суть — «{subject}»"
+            "subject is not in the form [TYPE](scope): summary — `{subject}`"
         )),
     }
 
     if lines.get(1).is_some_and(|line| !line.is_empty()) {
-        errors.push("после темы нужна пустая строка".to_owned());
+        errors.push("a blank line must follow the subject".to_owned());
     }
 
     let works = trailer_ids(text, WORK_TRAILER, 'w', &mut errors);
     let slices = trailer_ids(text, SLICE_TRAILER, 's', &mut errors);
     if works.is_empty() && slices.is_empty() {
         errors.push(
-            "нет трейлера Slipway-Work: wNNNN или Slipway-Slice: sNNNN — у коммита нет основания в плане"
+            "no Slipway-Work: wNNNN or Slipway-Slice: sNNNN trailer — the commit has no basis in the plan"
                 .to_owned(),
         );
     } else if let Some(exists) = exists {
         for work in works {
             let path = format!("{}/{work}.rs", layout::WORK_DIR);
             if !exists(&path) {
-                errors.push(format!(
-                    "единицы работы {work} нет в дереве коммита ({path})"
-                ));
+                errors.push(format!("work {work} is not in the commit tree ({path})"));
             }
         }
         for slice in slices {
             let path = format!("{}/{slice}.rs", layout::SLICE_DIR);
             if !exists(&path) {
-                errors.push(format!("среза {slice} нет в дереве коммита ({path})"));
+                errors.push(format!("slice {slice} is not in the commit tree ({path})"));
             }
         }
     }
@@ -270,7 +276,7 @@ fn trailer_ids<'a>(
         .any(|line| trailer_id(line, key, prefix).is_none())
     {
         let name = key.trim_end_matches(':');
-        errors.push(format!("трейлер {name} не по форме {prefix}NNNN"));
+        errors.push(format!("trailer {name} is not in the form {prefix}NNNN"));
     }
     lines
         .iter()
@@ -341,43 +347,52 @@ mod tests {
     fn each_rule_names_its_violation() {
         let long = format!("[FEAT](cli): {}\n\nSlipway-Work: w0001", "я".repeat(70));
         let cases = [
-            ("суть без типа\n\nSlipway-Work: w0001", "тема не по форме"),
+            (
+                "суть без типа\n\nSlipway-Work: w0001",
+                "subject is not in the form",
+            ),
             (
                 "[FEATURE](cli): суть\n\nSlipway-Work: w0001",
-                "тип [FEATURE]",
+                "type [FEATURE]",
             ),
-            ("[FEAT](wal): суть\n\nSlipway-Work: w0001", "область (wal)"),
+            ("[FEAT](wal): суть\n\nSlipway-Work: w0001", "scope (wal)"),
             (
                 "[FEAT](cli,,knowledge): суть\n\nSlipway-Work: w0001",
-                "область ()",
+                "scope ()",
             ),
             (
                 "[FEAT](cli): суть.\n\nSlipway-Work: w0001",
-                "точка в конце темы",
+                "subject ends with a period",
             ),
             // Тринадцать символов «[FEAT](cli): » и семьдесят «я».
-            (long.as_str(), "тема длиннее 72 символов (83)"),
+            (long.as_str(), "subject is longer than 72 characters (83)"),
             (
                 "[FEAT](cli): суть\nтело\n\nSlipway-Work: w0001",
-                "пустая строка",
+                "a blank line must follow the subject",
             ),
-            ("[FEAT](cli): суть\n\nSlipway-Work: 1", "не по форме wNNNN"),
+            (
+                "[FEAT](cli): суть\n\nSlipway-Work: 1",
+                "is not in the form wNNNN",
+            ),
             (
                 "[FEAT](cli): суть\n\nSlipway-Work: w00012",
-                "не по форме wNNNN",
+                "is not in the form wNNNN",
             ),
-            ("[FEAT](cli): суть", "нет трейлера"),
+            (
+                "[FEAT](cli): суть",
+                "no Slipway-Work: wNNNN or Slipway-Slice: sNNNN trailer",
+            ),
             (
                 "[FEAT](cli): суть\n\nSlipway-Work: w0099",
-                "единицы работы w0099",
+                "work w0099 is not in the commit tree",
             ),
             (
                 "[PLAN](cli): закрыт срез\n\nSlipway-Slice: 7",
-                "Slipway-Slice не по форме sNNNN",
+                "trailer Slipway-Slice is not in the form sNNNN",
             ),
             (
                 "[PLAN](cli): закрыт срез\n\nSlipway-Slice: s0099",
-                "среза s0099",
+                "slice s0099 is not in the commit tree",
             ),
         ];
         for (message, expected) in cases {

@@ -2,14 +2,14 @@
 //! (решения 8, 14 и 15).
 //!
 //! ```text
-//! cargo slipway commit -F <сообщение> [--log <файл>] [--timeout <сек>] -- <пути…>
-//! cargo slipway msg-check [--form-only] <сообщение> | --range <диапазон>
-//! cargo slipway gate [--repo <каталог>] [--journal-only] [<дерево>]
-//! cargo slipway hook pre-commit | commit-msg <сообщение> | pre-push <удалённый> <адрес>
+//! cargo slipway commit -F <message> [--log <file>] [--timeout <seconds>] -- <paths…>
+//! cargo slipway msg-check [--form-only] <message> | --range <range>
+//! cargo slipway gate [--repo <directory>] [--journal-only] [<tree>]
+//! cargo slipway hook pre-commit | commit-msg <message> | pre-push <remote> <url>
 //! cargo slipway hooks install
 //! cargo slipway work start | land | drop | state …
 //! cargo slipway slice close <sNNNN>
-//! cargo slipway journal hash [<ревизия>] | import --work <wNNNN> [--close-finished-slices]
+//! cargo slipway journal hash [<revision>] | import --work <wNNNN> [--close-finished-slices]
 //! ```
 //!
 //! Инструмент опирается на соглашения, а не на настройку: пути собраны в
@@ -33,20 +33,20 @@ mod work;
 use std::ffi::OsString;
 use std::process::ExitCode;
 
-const USAGE: &str = "cargo slipway — правила коммитов и журнал Slipway (решения 8, 14 и 15)
+const USAGE: &str = "cargo slipway — commit rules and the Slipway journal (decisions 8, 14 and 15)
 
-  cargo slipway commit -F <сообщение> [--log <файл>] [--timeout <сек>] -- <пути…>
-  cargo slipway msg-check [--form-only] <сообщение> | --range <диапазон>
-  cargo slipway gate [--repo <каталог>] [--journal-only] [<дерево>]
-  cargo slipway hook pre-commit | commit-msg <сообщение> | pre-push <удалённый> <адрес>
+  cargo slipway commit -F <message> [--log <file>] [--timeout <seconds>] -- <paths…>
+  cargo slipway msg-check [--form-only] <message> | --range <range>
+  cargo slipway gate [--repo <directory>] [--journal-only] [<tree>]
+  cargo slipway hook pre-commit | commit-msg <message> | pre-push <remote> <url>
   cargo slipway hooks install
-  cargo slipway work start <wNNNN> | land <wNNNN> [--commit <ревизия>] | drop <wNNNN> --reason <причина> | state [<wNNNN>]
+  cargo slipway work start <wNNNN> | land <wNNNN> [--commit <revision>] | drop <wNNNN> --reason <reason> | state [<wNNNN>]
   cargo slipway slice close <sNNNN>
-  cargo slipway journal hash [<ревизия>]
+  cargo slipway journal hash [<revision>]
   cargo slipway journal import --work <wNNNN> [--close-finished-slices]
 
-  Команды work, slice и journal import принимают --trailer <трейлер> для
-  дополнительных строк трейлеров сообщения коммита.";
+  The work, slice and journal import commands accept --trailer <trailer> for
+  extra trailer lines of the commit message.";
 
 fn main() -> ExitCode {
     let mut args: Vec<OsString> = std::env::args_os().skip(1).collect();
@@ -73,7 +73,7 @@ fn main() -> ExitCode {
             0
         }
         other => {
-            eprintln!("неизвестная команда {other}\n\n{USAGE}");
+            eprintln!("unknown command {other}\n\n{USAGE}");
             2
         }
     };

@@ -76,13 +76,13 @@ fn history_lands_traced_works_and_closes_finished_slices() {
     assert!(run.verdict().starts_with("COMMIT OK "), "{}", run.output());
 
     let state = repo.tool(&["work", "state"]).stdout;
-    assert!(state.contains("w0001  приземлена по истории"), "{state}");
-    assert!(state.contains("w0002  запланирована"), "{state}");
+    assert!(state.contains("w0001  landed from history"), "{state}");
+    assert!(state.contains("w0002  planned"), "{state}");
     assert!(
-        state.contains("w0003  запланирована"),
+        state.contains("w0003  planned"),
         "основание импортировано: {state}"
     );
-    assert!(state.contains("закрытые срезы: s0001"), "{state}");
+    assert!(state.contains("closed slices: s0001"), "{state}");
     assert!(
         state.contains("Работа w0001"),
         "название с переносом строки не прочитано: {state}"
@@ -101,7 +101,7 @@ fn history_lands_traced_works_and_closes_finished_slices() {
     let run = repo.tool(&["journal", "import", "--work", "w0003"]);
     assert_eq!(run.code, 1, "{}", run.output());
     assert!(
-        run.verdict().contains("импортировать нечего"),
+        run.verdict().contains("nothing to import"),
         "{}",
         run.output()
     );

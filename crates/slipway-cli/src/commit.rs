@@ -1,7 +1,7 @@
 //! Коммит по решению 8.
 //!
 //! ```text
-//! cargo slipway commit -F <файл сообщения> [--log <файл>] [--timeout <сек>] -- <пути…>
+//! cargo slipway commit -F <message> [--log <file>] [--timeout <seconds>] -- <paths…>
 //! ```
 //!
 //! Сообщение проверяется по форме до блокировки и хуков. Пути перечисляются
@@ -12,7 +12,7 @@
 //! Код возврата: 0 — коммит создан; 1 — по путям нечего коммитить или git add
 //! упал; 2 — неверные аргументы или окружение; 3 — блокировка не получена;
 //! 4 — коммит не создан: отказ проверки сообщения, хука или самого git.
-//! Последняя строка вывода — `COMMIT OK <sha>` или `COMMIT REFUSED: <причина>`.
+//! Последняя строка вывода — `COMMIT OK <sha>` или `COMMIT REFUSED: <reason>`.
 
 use crate::{git, layout, message};
 use std::ffi::OsString;
@@ -68,7 +68,7 @@ impl Args {
                 }
                 [flag, value, tail @ ..] if flag.to_str() == Some("--timeout") => {
                     let secs = value.to_str().and_then(|v| v.parse::<u64>().ok());
-                    let secs = secs.ok_or_else(|| refuse(2, "после --timeout нужны секунды"))?;
+                    let secs = secs.ok_or_else(|| refuse(2, "--timeout needs seconds"))?;
                     timeout = Duration::from_secs(secs);
                     rest = tail;
                 }
@@ -80,14 +80,14 @@ impl Args {
                 [flag] if matches!(flag.to_str(), Some("-F" | "--log" | "--timeout")) => {
                     return Err(refuse(
                         2,
-                        format!("после {} нужно значение", flag.to_string_lossy()),
+                        format!("{} needs a value", flag.to_string_lossy()),
                     ))
                 }
                 [other, ..] => {
                     return Err(refuse(
                         2,
                         format!(
-                            "неизвестный аргумент {}; пути перечисляются после --",
+                            "unknown argument {}; paths are listed after --",
                             other.to_string_lossy()
                         ),
                     ))
@@ -97,11 +97,11 @@ impl Args {
         let message = message
             .map(|path| absolute(&path))
             .filter(|path| File::open(path).is_ok())
-            .ok_or_else(|| refuse(2, "нужен -F <читаемый файл сообщения>"))?;
+            .ok_or_else(|| refuse(2, "-F <readable message file> is required"))?;
         if rest.is_empty() {
             return Err(refuse(
                 2,
-                "пути не перечислены: коммит всего изменённого запрещён",
+                "no paths listed: committing everything changed is refused",
             ));
         }
         Ok(Args {
@@ -141,7 +141,7 @@ impl Refusal {
                 println!("{line}");
             }
             if let Some(log) = log {
-                println!("полный вывод: {}", log.display());
+                println!("full output: {}", log.display());
             }
         }
         println!("COMMIT REFUSED: {}", self.reason);
@@ -151,17 +151,20 @@ impl Refusal {
 
 fn commit(args: &Args) -> Result<String, Refusal> {
     let repo =
-        git::Repo::discover(Path::new(".")).ok_or_else(|| refuse(2, "не git-репозиторий"))?;
+        git::Repo::discover(Path::new(".")).ok_or_else(|| refuse(2, "not a git repository"))?;
     let root = repo.root.as_path();
     let output = Output::open(args.log.as_deref())?;
 
     let text = fs::read_to_string(&args.message)
-        .map_err(|_| refuse(2, "нужен -F <читаемый файл сообщения>"))?;
+        .map_err(|_| refuse(2, "-F <readable message file> is required"))?;
     match message::check_in_index(root, &text, true) {
         Ok(errors) if errors.is_empty() => {}
         Ok(errors) => {
             output.note(&message::report(&errors));
-            return Err(refuse(4, "сообщение не по форме (решение 8)"));
+            return Err(refuse(
+                4,
+                "message is not in the required form (decision 8)",
+            ));
         }
         Err(problem) => return Err(refuse(2, problem)),
     }
@@ -181,7 +184,7 @@ fn commit(args: &Args) -> Result<String, Refusal> {
         let mut add = git::command(root);
         add.args(["add", "-A", "--"]).args(&to_add);
         if !output.run(&mut add) {
-            return Err(refuse(1, "git add упал на перечисленных путях"));
+            return Err(refuse(1, "git add failed on the listed paths"));
         }
     }
     let staged = git::command(root)
@@ -189,7 +192,7 @@ fn commit(args: &Args) -> Result<String, Refusal> {
         .args(&args.paths)
         .status();
     if staged.is_ok_and(|status| status.code() == Some(0)) {
-        return Err(refuse(1, "по перечисленным путям нечего коммитить"));
+        return Err(refuse(1, "nothing to commit in the listed paths"));
     }
 
     let mut commit = git::command(root);
@@ -207,11 +210,11 @@ fn commit(args: &Args) -> Result<String, Refusal> {
             .status();
         return Err(refuse(
             4,
-            "git commit не создал коммит: отказ хука или ошибка самого git (см. вывод)",
+            "git commit created no commit: a hook refused or git itself failed (see the output)",
         ));
     }
     git::read(root, &["rev-parse", "--short", "HEAD"])
-        .ok_or_else(|| refuse(4, "коммит создан, но HEAD не читается"))
+        .ok_or_else(|| refuse(4, "commit created, but HEAD cannot be read"))
 }
 
 /// Путь удалён через `git rm`: его нет ни в рабочем дереве, ни в индексе, но он
@@ -244,11 +247,15 @@ impl Output {
             return Ok(Output { log: None });
         };
         if let Some(dir) = path.parent() {
-            fs::create_dir_all(dir)
-                .map_err(|_| refuse(2, format!("не создать каталог для {}", path.display())))?;
+            fs::create_dir_all(dir).map_err(|_| {
+                refuse(
+                    2,
+                    format!("cannot create a directory for {}", path.display()),
+                )
+            })?;
         }
         let log = File::create(path)
-            .map_err(|_| refuse(2, format!("не открыть журнал {}", path.display())))?;
+            .map_err(|_| refuse(2, format!("cannot open log {}", path.display())))?;
         Ok(Output { log: Some(log) })
     }
 
@@ -276,7 +283,7 @@ impl Output {
 
 /// Строка журнала, которую стоит показать при отказе.
 fn is_refusal_line(line: &str) -> bool {
-    ["GATE FAIL", "SELFTEST FAIL", "отвергнуто", "FAILED"]
+    ["GATE FAIL", "SELFTEST FAIL", "refused", "FAILED"]
         .iter()
         .any(|marker| line.contains(marker))
         || line.starts_with("  - ")
@@ -323,14 +330,14 @@ impl Lock {
                 }
                 Err(error) => {
                     return Err(format!(
-                        "блокировка {} не создаётся: {error}",
+                        "lock {} cannot be created: {error}",
                         path.display()
                     ))
                 }
             }
             if started.elapsed() >= timeout {
                 return Err(format!(
-                    "блокировка коммита не получена за {} с: {} ({})",
+                    "commit lock not acquired in {}s: {} ({})",
                     timeout.as_secs(),
                     describe_holder(path),
                     path.display()
@@ -378,9 +385,9 @@ fn holder_is_dead(path: &Path) -> bool {
 /// Кто держит блокировку — для отказа по тайм-ауту.
 fn describe_holder(path: &Path) -> String {
     match holder_pid(path) {
-        Some(pid) => format!("держит процесс {pid}"),
+        Some(pid) => format!("held by process {pid}"),
         None => format!(
-            "файл без номера процесса моложе {} с",
+            "lock file without a process id is younger than {}s",
             PIDLESS_LOCK_GRACE.as_secs()
         ),
     }
@@ -402,19 +409,19 @@ mod tests {
         assert!(reason.contains("-F"), "{reason}");
         let (code, reason) = refusal(&["-F", "Cargo.toml", "a"]).unwrap();
         assert_eq!(code, 2);
-        assert!(reason.contains("неизвестный аргумент a"), "{reason}");
+        assert!(reason.contains("unknown argument a"), "{reason}");
         let (_, reason) = refusal(&["-F", "Cargo.toml", "--timeout", "x", "--", "a"]).unwrap();
-        assert!(reason.contains("секунды"), "{reason}");
+        assert!(reason.contains("seconds"), "{reason}");
         let (_, reason) = refusal(&["-F", "Cargo.toml", "--"]).unwrap();
-        assert!(reason.contains("пути не перечислены"), "{reason}");
+        assert!(reason.contains("no paths listed"), "{reason}");
     }
 
     #[test]
     fn refusal_lines_are_recognised() {
         for line in [
-            "GATE FAIL: cargo clippy -D warnings (код 101)",
-            "msg-check: сообщение отвергнуто (правила коммитов):",
-            "  - точка в конце темы",
+            "GATE FAIL: cargo clippy -D warnings (code 101)",
+            "msg-check: message refused (commit rules):",
+            "  - subject ends with a period",
             "error[E0308]: mismatched types",
             "error: could not compile",
             "test attacks::e1 ... FAILED",

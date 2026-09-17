@@ -45,7 +45,7 @@ fn range_checks_each_commit_against_its_own_tree() {
     assert_eq!(run.code, 1, "{}", run.output());
     assert_eq!(
         run.verdict(),
-        "MSG-CHECK REFUSED: 2 из 3",
+        "MSG-CHECK REFUSED: 2 of 3",
         "{}",
         run.output()
     );

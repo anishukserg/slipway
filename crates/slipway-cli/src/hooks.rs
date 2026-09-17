@@ -2,8 +2,8 @@
 //!
 //! ```text
 //! cargo slipway hook pre-commit
-//! cargo slipway hook commit-msg <файл сообщения>
-//! cargo slipway hook pre-push <удалённый> <адрес>
+//! cargo slipway hook commit-msg <message>
+//! cargo slipway hook pre-push <remote> <url>
 //! cargo slipway hooks install
 //! ```
 //!
@@ -38,7 +38,7 @@ pub fn run(args: &[OsString]) -> u8 {
         Some("commit-msg") if args.len() == 2 => message::run(&args[1..]),
         Some("pre-push") => pre_push(io::stdin().lock()),
         _ => {
-            eprintln!("hook: pre-commit | commit-msg <файл> | pre-push <удалённый> <адрес>");
+            eprintln!("hook: pre-commit | commit-msg <file> | pre-push <remote> <url>");
             2
         }
     }
@@ -53,30 +53,30 @@ pub fn install(args: &[OsString]) -> u8 {
         return 2;
     }
     let Some(repo) = git::Repo::discover(Path::new(".")) else {
-        eprintln!("hooks install: не git-репозиторий");
+        eprintln!("hooks install: not a git repository");
         return 2;
     };
     let dir = repo.root.join(layout::HOOKS_DIR);
     for (name, call) in HOOKS {
         let path = dir.join(name);
         if path.exists() {
-            println!("хук {name}: уже есть, не тронут");
+            println!("hook {name}: already present, left alone");
             continue;
         }
         let text = format!(
-            "#!/bin/sh\n# Правила Slipway (решение 14): хук вызывает установленный cargo slipway.\nexport RUSTUP_AUTO_INSTALL=0\nexec cargo slipway {call}\n"
+            "#!/bin/sh\n# Slipway rules (decision 14): the hook calls the installed cargo slipway.\nexport RUSTUP_AUTO_INSTALL=0\nexec cargo slipway {call}\n"
         );
         let written = fs::create_dir_all(&dir)
             .and_then(|()| fs::write(&path, text))
             .and_then(|()| fs::set_permissions(&path, fs::Permissions::from_mode(0o755)));
         if let Err(error) = written {
-            eprintln!("хук {name} не записан: {error}");
+            eprintln!("hook {name} not written: {error}");
             return 2;
         }
-        println!("хук {name}: записан");
+        println!("hook {name}: written");
     }
     if !git::succeeds(&repo.root, &["config", "core.hooksPath", layout::HOOKS_DIR]) {
-        eprintln!("core.hooksPath не выставлен");
+        eprintln!("core.hooksPath is not set");
         return 2;
     }
     println!("core.hooksPath = {}", layout::HOOKS_DIR);
@@ -92,7 +92,7 @@ pub fn install(args: &[OsString]) -> u8 {
 /// журнала не изменилось, и калитка проверяет только журнал.
 fn pre_commit() -> u8 {
     let Some(repo) = git::Repo::discover(Path::new(".")) else {
-        eprintln!("pre-commit: не git-репозиторий");
+        eprintln!("pre-commit: not a git repository");
         return 2;
     };
     let work = repo.git_dir.join(layout::COMMIT_TREE_DIR);
@@ -107,7 +107,7 @@ fn pre_commit() -> u8 {
         .and_then(|hash| proof::verdict(&repo.git_dir, hash));
     if let (Some(hash), Some(verdict)) = (&hash, &proven) {
         println!(
-            "pre-commit: дерево без журнала уже проверено ({}: {verdict}) — проверяется журнал",
+            "pre-commit: the tree without the journal is already checked ({}: {verdict}) — checking the journal",
             hash.get(..12).unwrap_or(hash)
         );
     }
@@ -119,19 +119,17 @@ fn pre_commit() -> u8 {
     // переменные хука направили запись временного репозитория в этот индекс, и
     // коммит упал на построении дерева уже после зелёных проверок.
     if !git::succeeds(&repo.root, &["write-tree"]) {
-        eprintln!("pre-commit: индекс коммита повреждён после калитки — коммит не создаётся");
+        eprintln!("pre-commit: the commit index is damaged after the gate — no commit is created");
         return 1;
     }
     if proven.is_none() {
         match (hash, verdict) {
             (Some(hash), Some(verdict)) => {
                 if let Err(error) = proof::record(&repo.git_dir, &hash, &verdict) {
-                    eprintln!("pre-commit: доказательство не записано: {error}");
+                    eprintln!("pre-commit: proof not written: {error}");
                 }
             }
-            _ => eprintln!(
-                "pre-commit: хэш дерева или вердикт не получены — доказательство не записано"
-            ),
+            _ => eprintln!("pre-commit: no tree hash or no verdict — proof not written"),
         }
     }
     0
@@ -144,12 +142,12 @@ fn export_index(root: &Path, stage: &Path, tree: &Path) -> Result<(), String> {
     let _ = fs::remove_dir_all(stage);
     fs::create_dir_all(stage)
         .and_then(|()| fs::create_dir_all(tree))
-        .map_err(|error| format!("каталоги выгрузки не созданы: {error}"))?;
+        .map_err(|error| format!("export directories not created: {error}"))?;
     let prefix = format!("--prefix={}/", stage.display());
     if !git::succeeds(root, &["checkout-index", "--all", &prefix]) {
-        return Err("git checkout-index не выгрузил индекс коммита".to_owned());
+        return Err("git checkout-index did not export the commit index".to_owned());
     }
-    sync(stage, tree).map_err(|error| format!("дерево коммита не выгружено: {error}"))?;
+    sync(stage, tree).map_err(|error| format!("commit tree not exported: {error}"))?;
     let _ = fs::remove_dir_all(stage);
     Ok(())
 }
@@ -232,7 +230,7 @@ fn run_gate(repo: &git::Repo, tree: &Path, journal_only: bool) -> (u8, Option<St
     let mut child = match command.spawn() {
         Ok(child) => child,
         Err(error) => {
-            eprintln!("pre-commit: cargo не запустился: {error}");
+            eprintln!("pre-commit: cargo did not start: {error}");
             return (2, None);
         }
     };
@@ -264,14 +262,14 @@ fn run_gate(repo: &git::Repo, tree: &Path, journal_only: bool) -> (u8, Option<St
 /// `<локальная ссылка> <локальный sha> <удалённая ссылка> <удалённый sha>`.
 fn pre_push(input: impl BufRead) -> u8 {
     let Some(repo) = git::Repo::discover(Path::new(".")) else {
-        eprintln!("pre-push: не git-репозиторий");
+        eprintln!("pre-push: not a git repository");
         return 2;
     };
     let list = repo.git_dir.join("info").join(layout::EXTERNAL_NAMES);
     let names = gate::read_external_names(&list);
     if names.is_empty() {
         eprintln!(
-            "pre-push: список внешних имён {} пуст или не задан — история на внешние имена не проверялась",
+            "pre-push: external name list {} is empty or not set — history was not checked for external names",
             list.display()
         );
     }
@@ -288,7 +286,7 @@ fn pre_push(input: impl BufRead) -> u8 {
             continue;
         }
         if is_archive(local_ref) || is_archive(remote_ref) {
-            eprintln!("pre-push: ветка архива {local_ref} не публикуется (решение 9)");
+            eprintln!("pre-push: archive branch {local_ref} is not published (decision 9)");
             refused = true;
             continue;
         }
@@ -318,22 +316,20 @@ fn dependencies_pass(repo: &git::Repo, sha: &str) -> bool {
     let in_commit =
         |path: &str| git::succeeds(&repo.root, &["cat-file", "-e", &format!("{sha}:{path}")]);
     if !in_commit(layout::MANIFEST) {
-        eprintln!("pre-push: в {short} нет Cargo.toml — зависимости не проверялись");
+        eprintln!("pre-push: no Cargo.toml in {short} — dependencies were not checked");
         return true;
     }
     if !in_commit(layout::DENY_POLICY) {
-        eprintln!(
-            "pre-push: в {short} нет deny.toml — политика зависимостей не задана (решение 13)"
-        );
+        eprintln!("pre-push: no deny.toml in {short} — no dependency policy is set (decision 13)");
         return false;
     }
     if !gate::installed("cargo-deny") {
-        eprintln!("pre-push: cargo-deny не установлен — cargo install cargo-deny --locked");
+        eprintln!("pre-push: cargo-deny is not installed — cargo install cargo-deny --locked");
         return false;
     }
     let tree = repo.git_dir.join(layout::PUSH_TREE);
     if let Err(problem) = export_commit(repo, sha, &tree) {
-        eprintln!("pre-push: не выгружено дерево {short}: {problem}");
+        eprintln!("pre-push: tree {short} not exported: {problem}");
         return false;
     }
     let log = repo.git_dir.join(layout::PUSH_DENY_LOG);
@@ -366,7 +362,7 @@ fn dependencies_pass(repo: &git::Repo, sha: &str) -> bool {
         eprintln!("{summary}");
     }
     eprintln!(
-        "pre-push: зависимости {short} не прошли cargo-deny, полный вывод: {}",
+        "pre-push: dependencies of {short} did not pass cargo-deny, full output: {}",
         log.display()
     );
     false
@@ -394,7 +390,7 @@ fn export_commit(repo: &git::Repo, sha: &str, tree: &Path) -> Result<(), String>
     if exported {
         Ok(())
     } else {
-        Err("git read-tree или checkout-index не выполнились".to_owned())
+        Err("git read-tree or checkout-index failed".to_owned())
     }
 }
 
@@ -409,7 +405,7 @@ fn history_is_clean(repo: &git::Repo, local: &str, remote: &str, names: &[String
         git::read(&repo.root, &["rev-list", &range])
     };
     let Some(commits) = listed.or_else(|| git::read(&repo.root, &["rev-list", local])) else {
-        eprintln!("pre-push: история {local} не читается — внешние имена не проверены");
+        eprintln!("pre-push: history of {local} cannot be read — external names not checked");
         return false;
     };
     let lowered: Vec<String> = names.iter().map(|name| name.to_lowercase()).collect();
@@ -429,7 +425,7 @@ fn history_is_clean(repo: &git::Repo, local: &str, remote: &str, names: &[String
                 .collect(),
             Ok(out) if out.status.code() == Some(1) => Vec::new(),
             _ => {
-                eprintln!("pre-push: поиск внешних имён в {commit} не выполнился");
+                eprintln!("pre-push: external name search in {commit} failed");
                 clean = false;
                 continue;
             }
@@ -444,12 +440,12 @@ fn history_is_clean(repo: &git::Repo, local: &str, remote: &str, names: &[String
         clean = false;
         let short = git::read(&repo.root, &["rev-parse", "--short", commit])
             .unwrap_or_else(|| commit.to_owned());
-        eprintln!("pre-push: коммит {short} содержит внешнее имя");
+        eprintln!("pre-push: commit {short} contains an external name");
         for file in files {
-            eprintln!("  файл: {file}");
+            eprintln!("  file: {file}");
         }
         if in_message {
-            eprintln!("  в сообщении коммита");
+            eprintln!("  in the commit message");
         }
     }
     clean

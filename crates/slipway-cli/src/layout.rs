@@ -19,7 +19,7 @@ pub const JOURNAL_DIR: &str = "doc/journal";
 pub const DOC_MANIFEST: &str = "doc/Cargo.toml";
 
 /// Решение с правилами коммитов — ссылка в сообщениях об отказе.
-pub const COMMIT_RULES: &str = "правила коммитов — решение 8, doc/adr/a0008.rs";
+pub const COMMIT_RULES: &str = "commit rules";
 
 /// Блокировка коммита в каталоге git.
 pub const COMMIT_LOCK: &str = "slipway-commit.lock";

@@ -92,7 +92,7 @@ fn work_outside_the_plan_is_refused_by_the_hook() {
     let run = commit(&repo, message, &[], &["new.txt"]);
     assert_eq!(run.code, 4, "{}", run.output());
     assert!(
-        run.stderr.contains("единицы работы w0099"),
+        run.stderr.contains("work w0099 is not in the commit tree"),
         "{}",
         run.output()
     );
@@ -117,18 +117,22 @@ fn log_takes_hook_output_and_terminal_keeps_refusal_lines() {
     );
     assert_eq!(run.code, 4, "{}", run.output());
     assert!(
-        run.stdout.contains("  - единицы работы w0099"),
+        run.stdout
+            .contains("  - work w0099 is not in the commit tree"),
         "{}",
         run.output()
     );
-    assert!(run.stdout.contains("полный вывод:"), "{}", run.output());
+    assert!(run.stdout.contains("full output:"), "{}", run.output());
     assert!(
         run.verdict().starts_with("COMMIT REFUSED: "),
         "{}",
         run.output()
     );
     let logged = fs::read_to_string(&log).expect("журнал");
-    assert!(logged.contains("единицы работы w0099"), "{logged}");
+    assert!(
+        logged.contains("work w0099 is not in the commit tree"),
+        "{logged}"
+    );
 }
 
 #[test]
@@ -137,7 +141,7 @@ fn paths_are_required() {
     let run = commit(&repo, OK, &[], &[]);
     assert_eq!(run.code, 2, "{}", run.output());
     assert!(
-        run.verdict().contains("пути не перечислены"),
+        run.verdict().contains("no paths listed"),
         "{}",
         run.output()
     );
@@ -149,7 +153,7 @@ fn nothing_to_commit_differs_from_refusal() {
     let run = commit(&repo, OK, &[], &["doc"]);
     assert_eq!(run.code, 1, "{}", run.output());
     assert!(
-        run.verdict().contains("нечего коммитить"),
+        run.verdict().contains("nothing to commit"),
         "{}",
         run.output()
     );
@@ -188,7 +192,7 @@ fn held_lock_waits_and_times_out() {
     let run = commit(&repo, OK, &["--timeout", "1"], &["new.txt"]);
     assert_eq!(run.code, 3, "{}", run.output());
     assert!(
-        run.verdict().contains("блокировка коммита не получена"),
+        run.verdict().contains("commit lock not acquired"),
         "{}",
         run.output()
     );
@@ -236,7 +240,7 @@ fn path_unknown_to_git_is_refused() {
     let head = repo.git(&["rev-parse", "HEAD"]);
     let run = commit(&repo, OK, &[], &["new.txt", "nosuch.txt"]);
     assert_eq!(run.code, 1, "{}", run.output());
-    assert!(run.verdict().contains("git add упал"), "{}", run.output());
+    assert!(run.verdict().contains("git add failed"), "{}", run.output());
     assert_eq!(
         repo.git(&["rev-parse", "HEAD"]),
         head,

@@ -30,7 +30,7 @@ cargo run -p slipway-cli -- gate
 
 - тема — тип в квадратных скобках, сразу за ним область в круглых, затем двоеточие и суть; тип из набора `FEAT FIX REFACTOR TEST DOCS ADR PLAN CHORE`, область — подсистема из [doc/taxonomy.rs](doc/taxonomy.rs) в нижнем регистре; не длиннее 72 символов и без точки в конце. Примеры — в `git log` этого репозитория;
 - трейлер `Slipway-Work: wNNNN` — работа, которая есть в дереве коммита; коммит закрытия среза несёт `Slipway-Slice: sNNNN`;
-- коммит — через `cargo slipway commit -F <сообщение> -- <пути>`: хук pre-commit выполняет калитку на дереве коммита, commit-msg проверяет сообщение;
+- коммит — через `cargo slipway commit -F <message> -- <paths>`: хук pre-commit выполняет калитку на дереве коммита, commit-msg проверяет сообщение;
 - хуки ставит `cargo run -p slipway-cli -- hooks install`.
 
 Состояние работы — не поле записи, а журнал: `cargo slipway work start` и `land`, `cargo slipway slice close` (решение 15).

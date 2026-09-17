@@ -21,12 +21,12 @@ fn external_name_in_the_tree_is_refused() {
     let run = repo.tool(&["gate"]);
     assert_eq!(run.code, 1, "{}", run.output());
     assert!(
-        run.stdout.contains("  внешнее имя в файле: leak.txt"),
+        run.stdout.contains("  external name in file: leak.txt"),
         "{}",
         run.output()
     );
     assert!(
-        run.verdict().starts_with("GATE FAIL: внешние имена"),
+        run.verdict().starts_with("GATE FAIL: external names"),
         "{}",
         run.output()
     );
@@ -37,7 +37,7 @@ fn missing_list_is_a_skipped_step_not_a_passed_one() {
     let repo = TempRepo::new("gate-no-list");
     repo.write("leak.txt", "текст с именем ZZVneshniy внутри\n");
     let run = repo.tool(&["gate"]);
-    assert!(run.stdout.contains("шаг не выполнялся"), "{}", run.output());
+    assert!(run.stdout.contains("step not run"), "{}", run.output());
 }
 
 #[test]
@@ -47,7 +47,7 @@ fn tree_without_manifest_does_not_start_cargo() {
     assert_eq!(run.code, 2, "{}", run.output());
     assert!(
         run.verdict()
-            .starts_with("GATE FAIL: в дереве нет Cargo.toml"),
+            .starts_with("GATE FAIL: no Cargo.toml in the tree"),
         "{}",
         run.output()
     );
@@ -63,13 +63,13 @@ fn broken_markdown_link_is_refused_even_inside_a_git_directory() {
     let run = repo.tool(&["gate"]);
     assert_eq!(run.code, 1, "{}", run.output());
     assert!(
-        run.stdout.contains("  битая ссылка: doc.md: missing.md"),
+        run.stdout.contains("  broken link: doc.md: missing.md"),
         "{}",
         run.output()
     );
     assert!(
         run.verdict()
-            .starts_with("GATE FAIL: относительные ссылки в markdown"),
+            .starts_with("GATE FAIL: relative links in markdown"),
         "{}",
         run.output()
     );
@@ -81,7 +81,7 @@ fn broken_markdown_link_is_refused_even_inside_a_git_directory() {
     let run = repo.tool(&["gate"]);
     assert!(
         run.verdict()
-            .starts_with("GATE FAIL: в дереве нет Cargo.toml"),
+            .starts_with("GATE FAIL: no Cargo.toml in the tree"),
         "{}",
         run.output()
     );
@@ -93,10 +93,10 @@ fn broken_markdown_link_is_refused_even_inside_a_git_directory() {
         "# Документ\n\nТема `[ТИП](область): суть`.\n\n```text\n[FEAT](cli): суть\n```\n",
     );
     let run = repo.tool(&["gate"]);
-    assert!(!run.stdout.contains("битая ссылка"), "{}", run.output());
+    assert!(!run.stdout.contains("broken link"), "{}", run.output());
     assert!(
         run.verdict()
-            .starts_with("GATE FAIL: в дереве нет Cargo.toml"),
+            .starts_with("GATE FAIL: no Cargo.toml in the tree"),
         "{}",
         run.output()
     );
@@ -115,22 +115,18 @@ fn explicit_tree_is_checked_instead_of_the_working_tree() {
     // Внешнее имя лежит вне дерева: шаг пройден, калитка дошла до манифеста.
     let run = repo.tool(&["gate", "--repo", &root, tree]);
     assert!(
-        !run.stdout.contains("внешнее имя в файле"),
+        !run.stdout.contains("external name in file"),
         "{}",
         run.output()
     );
     assert!(
         run.verdict()
-            .starts_with("GATE FAIL: в дереве нет Cargo.toml"),
+            .starts_with("GATE FAIL: no Cargo.toml in the tree"),
         "{}",
         run.output()
     );
 
     let run = repo.tool(&["gate", tree, "лишний"]);
     assert_eq!(run.code, 2, "{}", run.output());
-    assert!(
-        run.verdict().contains("лишний аргумент"),
-        "{}",
-        run.output()
-    );
+    assert!(run.verdict().contains("extra argument"), "{}", run.output());
 }

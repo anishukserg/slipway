@@ -2,7 +2,7 @@
 //! вердикт.
 //!
 //! ```text
-//! cargo slipway gate [--repo <каталог>] [--journal-only] [<дерево>]
+//! cargo slipway gate [--repo <directory>] [--journal-only] [<tree>]
 //! ```
 //!
 //! Хук pre-commit передаёт выгруженное дерево коммита; без аргумента
@@ -38,7 +38,7 @@
 //! проверки называется невыполненным, а не пройденным.
 //!
 //! Код возврата: 0 — пройдено; 1 — шаг упал; 2 — ошибка запуска. Последняя
-//! строка — `GATE OK (<n> из <m>; …)` или `GATE FAIL: <шаг>`.
+//! строка — `GATE OK (<n> of <m>; …)` или `GATE FAIL: <step>`.
 
 use crate::{git, layout, proof};
 use slipway_journal::Kind;
@@ -75,18 +75,18 @@ publish = false
 "#;
 
 /// Проба сверки кодов: неверный код обязан упасть, верный — пройти.
-const PROBE_LIB: &str = r#"//! Проба сверки кодов ошибок в атаках (решение 12).
+const PROBE_LIB: &str = r#"//! Probe for error code matching in attacks (decision 12).
 //!
-//! Неверный код: тело даёт E0308, объявлен E0080 — обязана упасть.
+//! Wrong code: the body yields E0308 while E0080 is declared — must fail.
 //!
 //! ```compile_fail,E0080
-//! let _: u32 = "не число";
+//! let _: u32 = "not a number";
 //! ```
 //!
-//! Верный код: то же тело — обязана пройти.
+//! Right code: the same body — must pass.
 //!
 //! ```compile_fail,E0308
-//! let _: u32 = "не число";
+//! let _: u32 = "not a number";
 //! ```
 "#;
 
@@ -201,7 +201,7 @@ impl Args {
                 Some("--repo") => {
                     let (dir, tail) = tail
                         .split_first()
-                        .ok_or_else(|| start_fail("после --repo нужен каталог"))?;
+                        .ok_or_else(|| start_fail("--repo needs a directory"))?;
                     parsed.repo = Some(PathBuf::from(dir));
                     rest = tail;
                 }
@@ -215,7 +215,7 @@ impl Args {
                 }
                 _ => {
                     return Err(start_fail(format!(
-                        "лишний аргумент {}",
+                        "extra argument {}",
                         first.to_string_lossy()
                     )))
                 }
@@ -238,13 +238,13 @@ struct Gate {
 impl Gate {
     fn open(args: &Args) -> Result<Gate, Fail> {
         let start = args.repo.as_deref().unwrap_or(Path::new("."));
-        let repo = git::Repo::discover(start).ok_or_else(|| start_fail("не git-репозиторий"))?;
+        let repo = git::Repo::discover(start).ok_or_else(|| start_fail("not a git repository"))?;
         let tree = args.tree.clone().unwrap_or_else(|| repo.root.clone());
         let tree = fs::canonicalize(&tree)
-            .map_err(|_| start_fail(format!("нет каталога {}", tree.display())))?;
+            .map_err(|_| start_fail(format!("no directory {}", tree.display())))?;
         let target = repo.root.join(layout::GATE_TARGET);
         fs::create_dir_all(&target)
-            .map_err(|_| start_fail(format!("не создать {}", target.display())))?;
+            .map_err(|_| start_fail(format!("cannot create {}", target.display())))?;
         Ok(Gate {
             root: repo.root,
             tree,
@@ -270,7 +270,7 @@ impl Gate {
         let manifest = self.tree.join(layout::MANIFEST);
         if !manifest.is_file() {
             return Err(start_fail(
-                "в дереве нет Cargo.toml — сборка не запускается",
+                "no Cargo.toml in the tree — the build does not start",
             ));
         }
         let target = self.target.clone();
@@ -320,11 +320,11 @@ impl Gate {
             .args(["test", "--manifest-path"])
             .arg(&manifest)
             .args(["--workspace", "--doc", "--no-fail-fast", "--locked"]);
-        let log = self.cargo_step("атаки: cargo test --doc", "attacks", &mut attacks)?;
+        let log = self.cargo_step("attacks: cargo test --doc", "attacks", &mut attacks)?;
         let doctests = count_doctests(&log);
         if doctests < DOCTEST_FLOOR {
             return Err(fail(format!(
-                "прошло doctest {doctests} при поле {DOCTEST_FLOOR} — атаки не исполнялись или удалены"
+                "doctest passed {doctests} at floor {DOCTEST_FLOOR} — attacks were not run or were removed"
             )));
         }
 
@@ -342,7 +342,7 @@ impl Gate {
             .and_then(|text| minimum_rust(&text))
             .ok_or_else(|| {
                 start_fail(
-                    "в Cargo.toml дерева нет rust-version — минимальная версия не проверяется",
+                    "no rust-version in the tree's Cargo.toml — the minimum version is not checked",
                 )
             })?;
         let toolchain = format!("+{msrv}");
@@ -368,12 +368,12 @@ impl Gate {
             .args(["test", "--manifest-path"])
             .arg(&manifest)
             .args(["--workspace", "--doc", "--no-fail-fast", "--locked"]);
-        let label = format!("атаки на {msrv}: cargo test --doc");
+        let label = format!("attacks on {msrv}: cargo test --doc");
         let log = self.cargo_step(&label, "msrv-attacks", &mut msrv_attacks)?;
         let msrv_doctests = count_doctests(&log);
         if msrv_doctests < DOCTEST_FLOOR {
             return Err(fail(format!(
-                "на {msrv} прошло doctest {msrv_doctests} при поле {DOCTEST_FLOOR} — атаки не исполнялись или удалены"
+                "on {msrv} doctest passed {msrv_doctests} at floor {DOCTEST_FLOOR} — attacks were not run or were removed"
             )));
         }
 
@@ -382,12 +382,12 @@ impl Gate {
         let policy = self.tree.join(layout::DENY_POLICY);
         if !policy.is_file() {
             return Err(fail(
-                "в дереве нет deny.toml — политика зависимостей не задана (решение 13)",
+                "no deny.toml in the tree — no dependency policy is set (decision 13)",
             ));
         }
         if !installed("cargo-deny") {
             return Err(start_fail(
-                "cargo-deny не установлен — cargo install cargo-deny --locked",
+                "cargo-deny is not installed — cargo install cargo-deny --locked",
             ));
         }
         let mut deny = self.cargo(&target);
@@ -399,7 +399,7 @@ impl Gate {
         self.cargo_step("cargo deny check", "deny", &mut deny)?;
 
         let mut verdict = format!(
-            "GATE OK ({} из {TOTAL}; doctest {doctests}, на {msrv} — {msrv_doctests}",
+            "GATE OK ({} of {TOTAL}; doctest {doctests}, on {msrv} — {msrv_doctests}",
             self.passed
         );
         self.append_skipped(&mut verdict);
@@ -412,7 +412,7 @@ impl Gate {
         let manifest = self.tree.join(layout::DOC_MANIFEST);
         if !manifest.is_file() {
             return Err(start_fail(
-                "в дереве нет doc/Cargo.toml — журнал не свернуть",
+                "no doc/Cargo.toml in the tree — the journal cannot be folded",
             ));
         }
         let target = self.target.clone();
@@ -421,13 +421,9 @@ impl Gate {
             .args(["check", "--manifest-path"])
             .arg(&manifest)
             .arg("--locked");
-        self.cargo_step(
-            "свёртка журнала: cargo check doc",
-            "journal-check",
-            &mut build,
-        )?;
+        self.cargo_step("journal fold: cargo check doc", "journal-check", &mut build)?;
         let mut verdict = format!(
-            "GATE OK ({} из {JOURNAL_ONLY_TOTAL}; только журнал — дерево без журнала уже проверено",
+            "GATE OK ({} of {JOURNAL_ONLY_TOTAL}; journal only — the tree without the journal is already checked",
             self.passed
         );
         self.append_skipped(&mut verdict);
@@ -436,7 +432,7 @@ impl Gate {
 
     fn append_skipped(&self, verdict: &mut String) {
         if !self.skipped.is_empty() {
-            verdict.push_str("; не выполнялось: ");
+            verdict.push_str("; not run: ");
             verdict.push_str(&self.skipped.join(", "));
         }
         verdict.push(')');
@@ -451,15 +447,14 @@ impl Gate {
             .collect();
         if patterns.is_empty() {
             println!(
-                "внешние имена: список {} пуст или не задан — шаг не выполнялся",
+                "external names: list {} is empty or not set — step not run",
                 list.display()
             );
-            self.skipped.push("внешние имена");
+            self.skipped.push("external names");
             return Ok(());
         }
-        let broken = |error: std::io::Error| {
-            start_fail(format!("поиск внешних имён не выполнился: {error}"))
-        };
+        let broken =
+            |error: std::io::Error| start_fail(format!("external name search failed: {error}"));
         let mut hits = Vec::new();
         for file in walk(&self.tree).map_err(broken)? {
             let bytes = fs::read(&file).map_err(broken)?;
@@ -474,9 +469,9 @@ impl Gate {
         }
         if !hits.is_empty() {
             for hit in &hits {
-                println!("  внешнее имя в файле: {hit}");
+                println!("  external name in file: {hit}");
             }
-            return Err(fail("внешние имена в дереве (решение 9)"));
+            return Err(fail("external names in the tree (decision 9)"));
         }
         self.passed += 1;
         Ok(())
@@ -484,15 +479,14 @@ impl Gate {
 
     /// Шаг 2: относительные ссылки в markdown ведут в существующие файлы.
     fn markdown_links(&mut self) -> Result<(), Fail> {
-        let broken_walk =
-            |error: std::io::Error| start_fail(format!("обход дерева не выполнился: {error}"));
+        let broken_walk = |error: std::io::Error| start_fail(format!("tree walk failed: {error}"));
         let documents: Vec<PathBuf> = walk(&self.tree)
             .map_err(broken_walk)?
             .into_iter()
             .filter(|path| path.extension().and_then(|e| e.to_str()) == Some("md"))
             .collect();
         if documents.is_empty() {
-            self.skipped.push("ссылки в markdown");
+            self.skipped.push("markdown links");
             return Ok(());
         }
         let mut broken = Vec::new();
@@ -508,9 +502,9 @@ impl Gate {
         }
         if !broken.is_empty() {
             for link in &broken {
-                println!("  битая ссылка: {link}");
+                println!("  broken link: {link}");
             }
-            return Err(fail("относительные ссылки в markdown"));
+            return Err(fail("relative links in markdown"));
         }
         self.passed += 1;
         Ok(())
@@ -523,12 +517,12 @@ impl Gate {
     fn journal(&mut self) -> Result<(), Fail> {
         let dir = self.tree.join(layout::JOURNAL_DIR);
         if !dir.is_dir() {
-            self.skipped.push("журнал");
+            self.skipped.push("journal");
             return Ok(());
         }
         let mut problems = self.changed_event_files();
         let (events, _) = slipway_journal::read_dir(&dir)
-            .map_err(|error| start_fail(format!("журнал не прочитан: {error}")))?;
+            .map_err(|error| start_fail(format!("journal not read: {error}")))?;
         for event in &events {
             let Kind::Landed { commit, tree, .. } = &event.kind else {
                 continue;
@@ -536,21 +530,21 @@ impl Gate {
             let object = format!("{commit}^{{commit}}");
             if !git::succeeds(&self.root, &["cat-file", "-e", &object]) {
                 problems.push(format!(
-                    "{}: коммита {commit} нет в репозитории",
+                    "{}: commit {commit} is not in the repository",
                     event.file
                 ));
             } else if proof::content_hash(&self.root, commit).as_deref() != Some(tree.as_str()) {
                 problems.push(format!(
-                    "{}: дерево коммита {commit} без журнала расходится с деревом события",
+                    "{}: the tree of commit {commit} without the journal differs from the event tree",
                     event.file
                 ));
             }
         }
         if !problems.is_empty() {
             for problem in &problems {
-                println!("  журнал: {problem}");
+                println!("  journal: {problem}");
             }
-            return Err(fail("журнал расходится с историей (решение 15)"));
+            return Err(fail("journal differs from history (decision 15)"));
         }
         self.passed += 1;
         Ok(())
@@ -581,14 +575,14 @@ impl Gate {
             if file.is_file() {
                 present.push((sha.to_owned(), path.to_owned(), file));
             } else {
-                problems.push(format!("{path}: файл события удалён"));
+                problems.push(format!("{path}: event file deleted"));
             }
         }
         let files: Vec<PathBuf> = present.iter().map(|(_, _, file)| file.clone()).collect();
         let hashes = proof::file_hashes(&self.root, &files);
         for ((sha, path, _), hash) in present.iter().zip(hashes) {
             if hash.as_deref() != Some(sha.as_str()) {
-                problems.push(format!("{path}: файл события изменён"));
+                problems.push(format!("{path}: event file changed"));
             }
         }
         problems
@@ -621,8 +615,8 @@ impl Gate {
             show_failure(&log);
             let code = status
                 .code()
-                .map_or_else(|| "сигнал".to_owned(), |code| code.to_string());
-            return Err(fail(format!("{label} (код {code})")));
+                .map_or_else(|| "signal".to_owned(), |code| code.to_string());
+            return Err(fail(format!("{label} (code {code})")));
         }
         self.passed += 1;
         Ok(log)
@@ -638,7 +632,7 @@ impl Gate {
             }
             fs::create_dir_all(path.parent().unwrap_or(&probe))
                 .and_then(|()| fs::write(&path, text))
-                .map_err(|error| start_fail(format!("проба не записана: {error}")))
+                .map_err(|error| start_fail(format!("probe not written: {error}")))
         };
         write(probe.join("Cargo.toml"), PROBE_MANIFEST)?;
         write(probe.join("src").join("lib.rs"), PROBE_LIB)
@@ -666,9 +660,9 @@ impl Gate {
             return Ok(());
         }
         show_failure(&log);
-        let on = toolchain.map(|t| format!(" на {t}")).unwrap_or_default();
+        let on = toolchain.map(|t| format!(" on {t}")).unwrap_or_default();
         Err(fail(format!(
-            "сверка кодов ошибок в атаках не работает{on} — атаки прошли бы вакуумно (решение 12)"
+            "error code matching in attacks does not work{on} — attacks would pass vacuously (decision 12)"
         )))
     }
 }
@@ -676,7 +670,7 @@ impl Gate {
 /// Запускает команду с выводом в журнал `log`.
 fn run_logged(command: &mut Command, log: &Path) -> Result<ExitStatus, Fail> {
     let not_opened =
-        |error: std::io::Error| start_fail(format!("журнал {} не открыт: {error}", log.display()));
+        |error: std::io::Error| start_fail(format!("log {} not opened: {error}", log.display()));
     let out = File::create(log).map_err(not_opened)?;
     let err = out.try_clone().map_err(not_opened)?;
     command
@@ -686,7 +680,7 @@ fn run_logged(command: &mut Command, log: &Path) -> Result<ExitStatus, Fail> {
         .status()
         .map_err(|error| {
             start_fail(format!(
-                "{} не запустился: {error}",
+                "{} did not start: {error}",
                 command.get_program().to_string_lossy()
             ))
         })
@@ -706,7 +700,7 @@ fn show_failure(log: &Path) {
     for line in &lines[lines.len().saturating_sub(TAIL_LINES)..] {
         println!("{line}");
     }
-    println!("полный вывод: {}", log.display());
+    println!("full output: {}", log.display());
 }
 
 /// Путь файла от корня дерева — для сообщений.

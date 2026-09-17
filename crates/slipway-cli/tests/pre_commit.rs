@@ -55,14 +55,14 @@ fn gate_sees_the_commit_tree_not_the_working_tree() {
     // останавливается на отсутствующем манифесте.
     assert_eq!(
         attempt(&repo),
-        "GATE FAIL: в дереве нет Cargo.toml — сборка не запускается"
+        "GATE FAIL: no Cargo.toml in the tree — the build does not start"
     );
 
     // Тот же след в индексе — отказ на внешних именах.
     repo.git(&["add", "leak.txt"]);
     assert_eq!(
         attempt(&repo),
-        "GATE FAIL: внешние имена в дереве (решение 9)"
+        "GATE FAIL: external names in the tree (decision 9)"
     );
 }
 

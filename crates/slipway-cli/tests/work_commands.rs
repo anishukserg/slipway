@@ -79,10 +79,10 @@ fn start_land_drop_and_close_write_events_and_commit_them() {
         "Co-Authored-By: Проба <proba@localhost>",
     ]);
     assert_ok(&run);
-    assert!(state_of(&repo, "w0001").contains("начата"));
+    assert!(state_of(&repo, "w0001").contains("started"));
     let body = repo.git(&["log", "-1", "--format=%B"]);
     assert!(
-        body.starts_with("[PLAN](cli): начата работа w0001"),
+        body.starts_with("[PLAN](cli): work w0001 started"),
         "{body}"
     );
     assert!(
@@ -93,11 +93,7 @@ fn start_land_drop_and_close_write_events_and_commit_them() {
     // Без доказательства для дерева коммита работы приземление отвергается.
     let run = repo.tool(&["work", "land", "w0001"]);
     assert_eq!(run.code, 1, "{}", run.output());
-    assert!(
-        run.verdict().contains("нет доказательства"),
-        "{}",
-        run.output()
-    );
+    assert!(run.verdict().contains("no proof"), "{}", run.output());
 
     prove_head(&repo);
     let run = repo.tool(&["work", "land", "w0001"]);
@@ -107,26 +103,26 @@ fn start_land_drop_and_close_write_events_and_commit_them() {
         files.contains("-gate.toml") && files.contains("-landed.toml"),
         "{files}"
     );
-    assert!(state_of(&repo, "w0001").contains("приземлена"));
+    assert!(state_of(&repo, "w0001").contains("landed"));
 
     // Срез не закрывается, пока в нём есть незавершённая работа.
     let run = repo.tool(&["slice", "close", "s0001"]);
     assert_eq!(run.code, 1, "{}", run.output());
     assert!(
-        run.verdict().contains("не завершены w0002"),
+        run.verdict().contains("w0002 not finished"),
         "{}",
         run.output()
     );
 
     assert_ok(&repo.tool(&["work", "drop", "w0002", "--reason", "замещена"]));
-    assert!(state_of(&repo, "w0002").contains("снята"));
+    assert!(state_of(&repo, "w0002").contains("abandoned"));
     assert_ok(&repo.tool(&["slice", "close", "s0001"]));
     let body = repo.git(&["log", "-1", "--format=%B"]);
     assert!(body.contains("Slipway-Slice: s0001"), "{body}");
     assert!(repo
         .tool(&["work", "state"])
         .stdout
-        .contains("закрытые срезы: s0001"));
+        .contains("closed slices: s0001"));
 }
 
 #[test]
@@ -134,14 +130,18 @@ fn illegal_requests_are_refused_before_any_event() {
     let repo = planned_repo("work-illegal");
     let head = repo.git(&["rev-parse", "HEAD"]);
     for (args, code, reason) in [
-        (vec!["work", "land", "w0001"], 1, "только начатую"),
-        (vec!["work", "start", "w0009"], 1, "нет в плане"),
+        (
+            vec!["work", "land", "w0001"],
+            1,
+            "only a started work can be landed",
+        ),
+        (vec!["work", "start", "w0009"], 1, "is not in the plan"),
         (
             vec!["work", "drop", "w0001", "--reason", " "],
             2,
-            "непустая причина",
+            "non-empty reason",
         ),
-        (vec!["slice", "close", "s0009"], 1, "нет в плане"),
+        (vec!["slice", "close", "s0009"], 1, "is not in the plan"),
         (vec!["work", "begin", "w0001"], 2, "work start"),
     ] {
         let run = repo.tool(&args);
@@ -156,7 +156,11 @@ fn illegal_requests_are_refused_before_any_event() {
 
     assert_ok(&repo.tool(&["work", "start", "w0001"]));
     let run = repo.tool(&["work", "start", "w0001"]);
-    assert!(run.verdict().contains("уже начата"), "{}", run.output());
+    assert!(
+        run.verdict().contains("is already started"),
+        "{}",
+        run.output()
+    );
 
     // Коммит без трейлера этой работы не приземляет её, даже с доказательством.
     repo.write("x.txt", "x\n");
@@ -173,7 +177,7 @@ fn illegal_requests_are_refused_before_any_event() {
     let run = repo.tool(&["work", "land", "w0001"]);
     assert_eq!(run.code, 1, "{}", run.output());
     assert!(
-        run.verdict().contains("не основан на работе w0001"),
+        run.verdict().contains("is not based on work w0001"),
         "{}",
         run.output()
     );

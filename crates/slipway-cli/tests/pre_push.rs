@@ -43,11 +43,11 @@ fn history_with_an_external_name_is_not_published() {
     let run = push(&repo, &[("refs/heads/master", leak.as_str(), ZERO)]);
     assert_eq!(run.code, 1, "{}", run.output());
     assert!(
-        run.stderr.contains("содержит внешнее имя"),
+        run.stderr.contains("contains an external name"),
         "{}",
         run.output()
     );
-    assert!(run.stderr.contains("  файл: leak.txt"), "{}", run.output());
+    assert!(run.stderr.contains("  file: leak.txt"), "{}", run.output());
     assert!(run.stderr.contains("PUSH REFUSED"), "{}", run.output());
 }
 
@@ -56,7 +56,7 @@ fn archive_branch_is_not_published() {
     let (repo, clean, _) = history_with_leak("push-archive");
     let run = push(&repo, &[("refs/heads/archive/old", clean.as_str(), ZERO)]);
     assert_eq!(run.code, 1, "{}", run.output());
-    assert!(run.stderr.contains("ветка архива"), "{}", run.output());
+    assert!(run.stderr.contains("archive branch"), "{}", run.output());
 }
 
 #[test]
@@ -67,7 +67,7 @@ fn clean_history_is_published() {
     // Во временном репозитории нет Cargo.toml: шаг зависимостей назван
     // невыполненным, а не пройден молча.
     assert!(
-        run.stderr.contains("зависимости не проверялись"),
+        run.stderr.contains("dependencies were not checked"),
         "{}",
         run.output()
     );
@@ -82,7 +82,7 @@ fn unknown_remote_tip_checks_the_whole_history() {
     let run = push(&repo, &[("refs/heads/master", leak.as_str(), unknown)]);
     assert_eq!(run.code, 1, "{}", run.output());
     assert!(
-        run.stderr.contains("содержит внешнее имя"),
+        run.stderr.contains("contains an external name"),
         "{}",
         run.output()
     );
@@ -100,7 +100,7 @@ fn every_reference_in_the_input_is_checked() {
     );
     assert_eq!(run.code, 1, "{}", run.output());
     assert!(
-        run.stderr.contains("ветка архива refs/heads/archive/old"),
+        run.stderr.contains("archive branch refs/heads/archive/old"),
         "{}",
         run.output()
     );
