@@ -23,13 +23,23 @@
 //! таксономия: из индекса или из дерева проверяемого коммита (решение 20).
 //! Негодная настройка — ошибка запуска, а не отказ проверки.
 //!
+//! Заданная в настройке `message_command` забирает форму темы себе: команда
+//! проекта получает путь к файлу сообщения аргументом, и код 0 означает
+//! «принято». Тогда Slipway не проверяет ни тип, ни область, ни предел длины,
+//! ни точку в конце, ни пустую строку после темы — и таксономии в дереве может
+//! не быть вовсе. Трейлер основания остаётся за Slipway: он есть, он по форме
+//! `wNNNN` или `sNNNN`, и работа или срез лежат в том же дереве. Делегируется
+//! форма, а не правило.
+//!
 //! Код возврата: 0 — принято; 1 — отвергнуто (причины в stderr); 2 — ошибка
 //! запуска.
 
 use crate::config::Config;
-use crate::git;
+use crate::{git, layout};
 use std::ffi::OsString;
-use std::path::Path;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 
 /// Ключ трейлера основания — единица работы.
 const WORK_TRAILER: &str = "Slipway-Work:";
@@ -54,7 +64,7 @@ pub fn run(args: &[OsString]) -> u8 {
         eprintln!("msg-check: a readable message file is required");
         return 2;
     };
-    match check_in_index(Path::new("."), &text, form_only) {
+    match check_in_index(Path::new("."), &text, form_only, Some(Path::new(file))) {
         Ok(checked) if checked.problems.is_empty() => 0,
         Ok(checked) => {
             eprint!("{}", checked.report());
@@ -111,6 +121,8 @@ pub struct Checked {
     /// Причины отказа; пустой список — сообщение принято.
     pub problems: Vec<String>,
     config: Config,
+    /// Вывод делегированной команды; показывается только при её отказе.
+    output: String,
 }
 
 impl Checked {
@@ -127,18 +139,32 @@ impl Checked {
             text.push_str(problem);
             text.push('\n');
         }
+        // Вывод делегированной команды — с отступом под её причиной: за этот
+        // отказ отвечает проект, и объяснить его может только он (решение 20).
+        for line in self.output.lines() {
+            text.push_str("    ");
+            text.push_str(line);
+            text.push('\n');
+        }
         text
     }
 }
 
 /// Проверяет сообщение по индексу репозитория в `dir`: правила — из настройки
 /// в индексе, области — из таксономии в индексе, основания — из индекса.
+/// `file` — файл сообщения для делегированной команды, если он есть.
 /// `Err` — проверку не из чего выполнить.
-pub fn check_in_index(dir: &Path, text: &str, form_only: bool) -> Result<Checked, String> {
-    check_against(dir, "", "in the index", text, form_only)
+pub fn check_in_index(
+    dir: &Path,
+    text: &str,
+    form_only: bool,
+    file: Option<&Path>,
+) -> Result<Checked, String> {
+    check_against(dir, "", "in the index", text, form_only, file)
 }
 
-/// Проверяет сообщение коммита по дереву этого же коммита.
+/// Проверяет сообщение коммита по дереву этого же коммита. Своего файла у
+/// такого сообщения нет: оно взято из git.
 pub fn check_commit(dir: &Path, commit: &str) -> Result<Checked, String> {
     let text = git::read(dir, &["log", "-1", "--format=%B", commit])
         .ok_or_else(|| format!("message of commit {commit} cannot be read"))?;
@@ -148,6 +174,7 @@ pub fn check_commit(dir: &Path, commit: &str) -> Result<Checked, String> {
         &format!("in the tree of {commit}"),
         &text,
         false,
+        None,
     )
 }
 
@@ -159,6 +186,7 @@ fn check_against(
     place: &str,
     text: &str,
     form_only: bool,
+    file: Option<&Path>,
 ) -> Result<Checked, String> {
     // Правила — из того же дерева, что и таксономия: иначе правка настройки в
     // рабочей копии меняла бы вердикт для чужого дерева (решение 20).
@@ -167,7 +195,10 @@ fn check_against(
     let scopes = git::read(dir, &["show", &taxonomy])
         .map(|text| subsystem_scopes(&text))
         .unwrap_or_default();
-    if scopes.is_empty() {
+    // Без таксономии Slipway нечем проверять области темы, и это ошибка
+    // запуска. При делегированной форме областей он не проверяет вовсе, и
+    // таксономии в дереве может не быть (решение 20).
+    if scopes.is_empty() && config.message_command.is_none() {
         return Err(format!(
             "no Subsystem axis values {place} ({})",
             config.taxonomy()
@@ -178,8 +209,95 @@ fn check_against(
         git::succeeds(dir, &["cat-file", "-e", &spec])
     };
     let exists: Option<&dyn Fn(&str) -> bool> = if form_only { None } else { Some(&in_tree) };
-    let problems = problems(text, &scopes, exists, &config);
-    Ok(Checked { problems, config })
+    let mut found = Vec::new();
+    let mut output = String::new();
+    if let Some((problem, shown)) = delegated(dir, &config, text, file)? {
+        found.push(problem);
+        output = shown;
+    }
+    found.extend(problems(text, &scopes, exists, &config));
+    Ok(Checked {
+        problems: found,
+        config,
+        output,
+    })
+}
+
+/// Отказ делегированной команды, если она задана: команда получает путь к файлу
+/// сообщения аргументом, код 0 — принято. `Ok(None)` — команда приняла
+/// сообщение или её нет; `Err` — команду нечем выполнить, а это ошибка запуска,
+/// а не отказ сообщения.
+fn delegated(
+    dir: &Path,
+    config: &Config,
+    text: &str,
+    file: Option<&Path>,
+) -> Result<Option<(String, String)>, String> {
+    let Some(words) = config.message_command.as_deref() else {
+        return Ok(None);
+    };
+    let (program, args) = words.split_first().ok_or_else(|| {
+        format!(
+            "{}: key `message_command` has an empty value",
+            layout::CONFIG
+        )
+    })?;
+    // Своего файла у сообщения из git нет — оно пишется во временный файл в
+    // каталоге git и убирается за собой вместе с `written`.
+    let written;
+    let path = match file {
+        Some(path) => path,
+        None => {
+            written = CheckedMessage::write(dir, text)?;
+            written.path.as_path()
+        }
+    };
+    let out = Command::new(program)
+        .current_dir(dir)
+        .args(args)
+        .arg(path)
+        .output()
+        .map_err(|error| format!("message command `{program}` did not start: {error}"))?;
+    if out.status.success() {
+        return Ok(None);
+    }
+    let code = out
+        .status
+        .code()
+        .map_or_else(|| "signal".to_owned(), |code| code.to_string());
+    let shown = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    Ok(Some((
+        format!("subject refused by `{}` (code {code})", words.join(" ")),
+        shown,
+    )))
+}
+
+/// Файл сообщения для делегированной команды, когда своего файла нет: пишется в
+/// каталог git и удаляется вместе со структурой.
+struct CheckedMessage {
+    path: PathBuf,
+}
+
+impl CheckedMessage {
+    fn write(dir: &Path, text: &str) -> Result<CheckedMessage, String> {
+        let git_dir = git::read(dir, &["rev-parse", "--absolute-git-dir"]).ok_or_else(|| {
+            "not a git repository — the message cannot be given to the command".to_owned()
+        })?;
+        let path = PathBuf::from(git_dir).join(layout::CHECKED_MESSAGE);
+        fs::write(&path, text)
+            .map_err(|error| format!("message file {} not written: {error}", path.display()))?;
+        Ok(CheckedMessage { path })
+    }
+}
+
+impl Drop for CheckedMessage {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.path);
+    }
 }
 
 /// Значения оси подсистем из текста таксономии, в нижнем регистре.
@@ -223,6 +341,48 @@ pub fn problems(
     let lines: Vec<&str> = text.lines().filter(|line| !line.starts_with('#')).collect();
     let subject = lines.first().copied().unwrap_or("");
 
+    // Форму темы проверяет команда проекта, если она задана: тип, область,
+    // предел длины, точка в конце и пустая строка после темы — её забота
+    // (решение 20). Трейлер основания остаётся за Slipway: это правило, а не
+    // форма.
+    if config.message_command.is_none() {
+        subject_problems(subject, lines.get(1).copied(), scopes, config, &mut errors);
+    }
+
+    let works = trailer_ids(text, WORK_TRAILER, 'w', &mut errors);
+    let slices = trailer_ids(text, SLICE_TRAILER, 's', &mut errors);
+    if works.is_empty() && slices.is_empty() {
+        errors.push(
+            "no Slipway-Work: wNNNN or Slipway-Slice: sNNNN trailer — the commit has no basis in the plan"
+                .to_owned(),
+        );
+    } else if let Some(exists) = exists {
+        for work in works {
+            let path = format!("{}/{work}.rs", config.work_dir());
+            if !exists(&path) {
+                errors.push(format!("work {work} is not in the commit tree ({path})"));
+            }
+        }
+        for slice in slices {
+            let path = format!("{}/{slice}.rs", config.slice_dir());
+            if !exists(&path) {
+                errors.push(format!("slice {slice} is not in the commit tree ({path})"));
+            }
+        }
+    }
+    errors
+}
+
+/// Причины отказа по форме темы — ровно то, что забирает себе делегированная
+/// команда проекта: тип, области, точка в конце, предел длины и пустая строка
+/// после темы. `after` — строка за темой, если она есть.
+fn subject_problems(
+    subject: &str,
+    after: Option<&str>,
+    scopes: &[String],
+    config: &Config,
+    errors: &mut Vec<String>,
+) {
     match parse_subject(subject) {
         Some((kind, subject_scopes, summary)) => {
             if !config.commit_types.iter().any(|known| known == kind) {
@@ -255,32 +415,9 @@ pub fn problems(
         )),
     }
 
-    if lines.get(1).is_some_and(|line| !line.is_empty()) {
+    if after.is_some_and(|line| !line.is_empty()) {
         errors.push("a blank line must follow the subject".to_owned());
     }
-
-    let works = trailer_ids(text, WORK_TRAILER, 'w', &mut errors);
-    let slices = trailer_ids(text, SLICE_TRAILER, 's', &mut errors);
-    if works.is_empty() && slices.is_empty() {
-        errors.push(
-            "no Slipway-Work: wNNNN or Slipway-Slice: sNNNN trailer — the commit has no basis in the plan"
-                .to_owned(),
-        );
-    } else if let Some(exists) = exists {
-        for work in works {
-            let path = format!("{}/{work}.rs", config.work_dir());
-            if !exists(&path) {
-                errors.push(format!("work {work} is not in the commit tree ({path})"));
-            }
-        }
-        for slice in slices {
-            let path = format!("{}/{slice}.rs", config.slice_dir());
-            if !exists(&path) {
-                errors.push(format!("slice {slice} is not in the commit tree ({path})"));
-            }
-        }
-    }
-    errors
 }
 
 /// Идентификаторы из трейлеров `key`; трейлер не по форме добавляет причину.
@@ -478,6 +615,49 @@ mod tests {
         );
         let message = "[FEAT](cli): суть\n\nSlipway-Work: w0001";
         assert!(problems(message, &scopes(), Some(&planned), &config).is_empty());
+    }
+
+    /// Делегированная проверка формы (решение 20): тему забирает команда
+    /// проекта, а трейлер основания и наличие работы в дереве остаются за
+    /// Slipway. Значений оси подсистем при этом может не быть вовсе.
+    #[test]
+    fn a_delegated_form_leaves_the_basis_to_slipway() {
+        let config = Config {
+            message_command: Some(vec!["true".to_owned()]),
+            ..Config::default()
+        };
+        // Тема, невозможная по правилам Slipway: свой тип, своя область, длина
+        // больше предела, точка в конце и тело сразу за темой.
+        let subject = format!("CHANGE: {}.", "и".repeat(80));
+        let accepted = format!("{subject}\nтело\n\nSlipway-Work: w0001\n");
+        assert_eq!(
+            problems(&accepted, &[], Some(&planned), &config),
+            Vec::<String>::new()
+        );
+        // Без делегирования та же тема отвергается — контроль на то, что дело в
+        // настройке, а не в самой теме.
+        assert!(!problems(&accepted, &[], Some(&planned), &Config::default()).is_empty());
+
+        for (message, expected) in [
+            (
+                format!("{subject}\n"),
+                "no Slipway-Work: wNNNN or Slipway-Slice: sNNNN trailer",
+            ),
+            (
+                format!("{subject}\n\nSlipway-Work: 7\n"),
+                "trailer Slipway-Work is not in the form wNNNN",
+            ),
+            (
+                format!("{subject}\n\nSlipway-Work: w0099\n"),
+                "work w0099 is not in the commit tree",
+            ),
+        ] {
+            let found = problems(&message, &[], Some(&planned), &config);
+            assert!(
+                found.iter().any(|problem| problem.contains(expected)),
+                "«{message}»: ожидалось «{expected}», получено {found:?}"
+            );
+        }
     }
 
     #[test]

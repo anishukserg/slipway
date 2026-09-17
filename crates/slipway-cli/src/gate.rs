@@ -11,8 +11,9 @@
 //! тулчейн брался из его `rust-toolchain.toml`.
 //!
 //! Настройку (`slipway.toml`) калитка читает из проверяемого дерева, как
-//! `Cargo.toml` и `deny.toml`: оттуда берутся каталог журнала и манифест крейта
-//! документов (решение 20).
+//! `Cargo.toml` и `deny.toml`: оттуда берутся каталог журнала, манифест крейта
+//! документов, пол числа прошедших атакующих doctest и команда проекта
+//! (решение 20).
 //!
 //! Шаги, от дешёвых к дорогим:
 //!
@@ -21,22 +22,28 @@
 //! 2. относительные ссылки в markdown ведут в существующие файлы;
 //! 3. журнал: файлы событий из HEAD не изменены и не удалены, приземления
 //!    совпадают с историей git (решение 15);
-//! 4. форматирование — `cargo fmt --check`;
-//! 5. clippy без предупреждений на всех целях;
-//! 6. сборка всех целей с константными проверками реестров и тесты;
-//! 7. сверка кодов ошибок работает: пробная атака с неверным кодом падает, с
+//! 4. команда проекта из `gate_command`, если она задана: её отказ — отказ
+//!    калитки. Шага нет, когда команды нет, поэтому шагов всего 12 или 13;
+//! 5. форматирование — `cargo fmt --check`;
+//! 6. clippy без предупреждений на всех целях;
+//! 7. сборка всех целей с константными проверками реестров и тесты;
+//! 8. сверка кодов ошибок работает: пробная атака с неверным кодом падает, с
 //!    верным — проходит (решение 12);
-//! 8. атаки — doctest со сверкой кодов под `RUSTC_BOOTSTRAP=1`, в отдельном
+//! 9. атаки — doctest со сверкой кодов под `RUSTC_BOOTSTRAP=1`, в отдельном
 //!    каталоге сборки, с полом по числу прошедших;
-//! 9. документация без предупреждений и битых внутренних ссылок;
-//! 10. сборка всех целей на минимальной версии из `rust-version`;
-//! 11. проба сверки кодов и атаки на минимальной версии, с тем же полом;
-//! 12. зависимости — политика `deny.toml` по сохранённой базе уязвимостей, без
+//! 10. документация без предупреждений и битых внутренних ссылок;
+//! 11. сборка всех целей на минимальной версии из `rust-version`;
+//! 12. проба сверки кодов и атаки на минимальной версии, с тем же полом;
+//! 13. зависимости — политика `deny.toml` по сохранённой базе уязвимостей, без
 //!     сети (решение 13).
+//!
+//! Команда проекта идёт до шагов cargo: дешёвые проверки Slipway отказывают
+//! первыми, а команда проекта обычно сама включает форматирование, clippy и
+//! тесты, которые идут дальше.
 //!
 //! С `--journal-only` — для коммита, дерево которого без журнала уже прошло
 //! калитку, — выполняются шаги 1–3 и сборка крейта документов, где журнал
-//! сворачивается.
+//! сворачивается; команда проекта не выполняется: это дерево уже проверено.
 //!
 //! Отсутствующий инструмент — отказ шага, а не пропуск. Шаг без предмета
 //! проверки называется невыполненным, а не пройденным.
@@ -52,12 +59,9 @@ use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
 
-/// Пол числа прошедших doctest. Только растёт: добавил атаку — подними;
-/// понижение — изменение правила.
-const DOCTEST_FLOOR: usize = 36;
-
-/// Число шагов полной калитки.
-const TOTAL: usize = 12;
+/// Число собственных шагов полной калитки. Делегированный шаг прибавляется к
+/// нему, когда команда проекта задана (решение 20).
+const SLIPWAY_TOTAL: usize = 12;
 
 /// Число шагов калитки журнала.
 const JOURNAL_ONLY_TOTAL: usize = 4;
@@ -113,17 +117,27 @@ pub fn run_with_verdict(args: &[OsString]) -> (u8, String) {
     (code, verdict)
 }
 
-/// cargo в каталоге `dir` с каталогом сборки `build`. Переменные GIT_* хука
-/// снимаются. RUSTUP_TOOLCHAIN тоже: rustup передаёт её всем дочерним
-/// процессам `cargo run` хука, и она перекрыла бы `rust-toolchain.toml` дерева —
-/// коммит, меняющий тулчейн, проверялся бы старым. Отсутствующий тулчейн —
+/// cargo в каталоге `dir` с каталогом сборки `build`. Отсутствующий тулчейн —
 /// отказ, а не загрузка внутри хука.
 pub fn cargo_command(dir: &Path, build: &Path) -> Command {
-    let mut command = Command::new("cargo");
+    let mut command = tree_command("cargo", dir);
+    command
+        .env("CARGO_TARGET_DIR", build)
+        .env("RUSTUP_AUTO_INSTALL", "0");
+    command
+}
+
+/// Программа, запускаемая калиткой в каталоге `dir`, с гигиеной окружения.
+///
+/// Переменные GIT_* хука снимаются: иначе запись дочернего git ушла бы в индекс
+/// коммита, ради которого запущен хук. RUSTUP_TOOLCHAIN тоже: rustup передаёт
+/// её всем дочерним процессам `cargo run` хука, и она перекрыла бы
+/// `rust-toolchain.toml` дерева — коммит, меняющий тулчейн, проверялся бы
+/// старым.
+fn tree_command(program: &str, dir: &Path) -> Command {
+    let mut command = Command::new(program);
     command
         .current_dir(dir)
-        .env("CARGO_TARGET_DIR", build)
-        .env("RUSTUP_AUTO_INSTALL", "0")
         .env_remove("RUSTUP_TOOLCHAIN")
         .env_remove("RUSTUP_TOOLCHAIN_SOURCE");
     for (key, _) in std::env::vars_os() {
@@ -132,6 +146,12 @@ pub fn cargo_command(dir: &Path, build: &Path) -> Command {
         }
     }
     command
+}
+
+/// Общее число шагов полной калитки: собственные шаги плюс делегированный,
+/// когда команда проекта задана. Число в вердикте обязано быть правдой.
+fn total(config: &Config) -> usize {
+    SLIPWAY_TOTAL + usize::from(config.gate_command.is_some())
 }
 
 /// Имена внешних проектов из локального списка: без пустых строк и
@@ -274,6 +294,10 @@ impl Gate {
         if self.journal_only {
             return self.check_journal_build();
         }
+        // Команда проекта — сразу после журнала и до шагов cargo: дешёвые
+        // проверки Slipway отказывают первыми, а команда проекта обычно сама
+        // включает fmt, clippy и тесты, которые идут дальше (решение 20).
+        self.project_command()?;
 
         // Дальше запускается cargo. Без манифеста в самом дереве cargo пошёл бы
         // искать рабочее пространство в родительских каталогах и собрал бы
@@ -332,10 +356,14 @@ impl Gate {
             .arg(&manifest)
             .args(["--workspace", "--doc", "--no-fail-fast", "--locked"]);
         let log = self.cargo_step("attacks: cargo test --doc", "attacks", &mut attacks)?;
+        // Пол — из настройки проверяемого дерева: число атак у каждого проекта
+        // своё, и зашитое число Slipway отказывало бы в чужом всегда
+        // (решение 20).
+        let floor = self.config.doctest_floor;
         let doctests = count_doctests(&log);
-        if doctests < DOCTEST_FLOOR {
+        if doctests < floor {
             return Err(fail(format!(
-                "doctest passed {doctests} at floor {DOCTEST_FLOOR} — attacks were not run or were removed"
+                "doctest passed {doctests} at floor {floor} — attacks were not run or were removed"
             )));
         }
 
@@ -382,9 +410,9 @@ impl Gate {
         let label = format!("attacks on {msrv}: cargo test --doc");
         let log = self.cargo_step(&label, "msrv-attacks", &mut msrv_attacks)?;
         let msrv_doctests = count_doctests(&log);
-        if msrv_doctests < DOCTEST_FLOOR {
+        if msrv_doctests < floor {
             return Err(fail(format!(
-                "on {msrv} doctest passed {msrv_doctests} at floor {DOCTEST_FLOOR} — attacks were not run or were removed"
+                "on {msrv} doctest passed {msrv_doctests} at floor {floor} — attacks were not run or were removed"
             )));
         }
 
@@ -410,8 +438,9 @@ impl Gate {
         self.cargo_step("cargo deny check", "deny", &mut deny)?;
 
         let mut verdict = format!(
-            "GATE OK ({} of {TOTAL}; doctest {doctests}, on {msrv} — {msrv_doctests}",
-            self.passed
+            "GATE OK ({} of {}; doctest {doctests}, on {msrv} — {msrv_doctests}",
+            self.passed,
+            total(&self.config)
         );
         self.append_skipped(&mut verdict);
         Ok(verdict)
@@ -448,6 +477,26 @@ impl Gate {
             verdict.push_str(&self.skipped.join(", "));
         }
         verdict.push(')');
+    }
+
+    /// Делегированный шаг: команда проекта из настройки проверяемого дерева.
+    /// Её отказ — отказ калитки, и текст называет команду и код возврата. Нет
+    /// команды — нет и шага, поэтому он не считается (решение 20).
+    fn project_command(&mut self) -> Result<(), Fail> {
+        let Some(words) = self.config.gate_command.clone() else {
+            return Ok(());
+        };
+        let (program, args) = words
+            .split_first()
+            .ok_or_else(|| start_fail("gate_command is empty"))?;
+        // Команда выполняется в проверяемом дереве и с той же гигиеной
+        // окружения, что и cargo: её дочерний git не пишет в индекс коммита,
+        // ради которого запущен хук.
+        let mut command = tree_command(program, &self.tree);
+        command.args(args);
+        let label = format!("project command: {}", words.join(" "));
+        self.cargo_step(&label, "project", &mut command)?;
+        Ok(())
     }
 
     /// Шаг 1: имена внешних проектов не встречаются в файлах дерева.
@@ -994,6 +1043,16 @@ mod tests {
             "а это ссылка: [файл](real.md)\n"
         );
         assert_eq!(relative_links(text), ["real.md"]);
+    }
+
+    /// Число шагов в вердикте — правда: делегированный шаг прибавляется к
+    /// собственным только тогда, когда команда проекта задана (решение 20).
+    #[test]
+    fn the_project_command_adds_a_step_to_the_total() {
+        let mut config = Config::default();
+        assert_eq!(total(&config), SLIPWAY_TOTAL);
+        config.gate_command = Some(vec!["make".to_owned(), "check".to_owned()]);
+        assert_eq!(total(&config), SLIPWAY_TOTAL + 1);
     }
 
     #[test]

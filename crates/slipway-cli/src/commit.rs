@@ -157,8 +157,8 @@ fn commit(args: &Args) -> Result<String, Refusal> {
     let text = fs::read_to_string(&args.message)
         .map_err(|_| refuse(2, "-F <readable message file> is required"))?;
     // Правила — из индекса, из того же дерева, что и проверяемое (решение 20).
-    let checked =
-        message::check_in_index(root, &text, true).map_err(|problem| refuse(2, problem))?;
+    let checked = message::check_in_index(root, &text, true, Some(&args.message))
+        .map_err(|problem| refuse(2, problem))?;
     if !checked.problems.is_empty() {
         output.note(&checked.report());
         return Err(refuse(

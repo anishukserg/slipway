@@ -102,6 +102,59 @@ fn broken_markdown_link_is_refused_even_inside_a_git_directory() {
     );
 }
 
+/// Настройка с командой проекта в проверяемом дереве (решение 20).
+fn with_gate_command(repo: &TempRepo, command: &str) {
+    repo.write("slipway.toml", &format!("gate_command = \"{command}\"\n"));
+}
+
+#[test]
+fn a_passing_project_command_is_a_step_and_the_gate_goes_on() {
+    let repo = TempRepo::new("gate-command-passes");
+    with_gate_command(&repo, "true");
+    let run = repo.tool(&["gate"]);
+    // Шаг выполнен — у него есть журнал, — и калитка дошла до проверки
+    // манифеста, как в прочих сценариях.
+    assert!(
+        repo.path("target/gate/project.log").is_file(),
+        "шаг команды проекта не выполнялся: {}",
+        run.output()
+    );
+    assert_eq!(run.code, 2, "{}", run.output());
+    assert!(
+        run.verdict()
+            .starts_with("GATE FAIL: no Cargo.toml in the tree"),
+        "{}",
+        run.output()
+    );
+}
+
+#[test]
+fn a_failing_project_command_fails_the_gate() {
+    let repo = TempRepo::new("gate-command-fails");
+    with_gate_command(&repo, "false");
+    let run = repo.tool(&["gate"]);
+    assert_eq!(run.code, 1, "{}", run.output());
+    assert_eq!(
+        run.verdict(),
+        "GATE FAIL: project command: false (code 1)",
+        "{}",
+        run.output()
+    );
+}
+
+#[test]
+fn a_missing_project_program_is_refused_not_skipped() {
+    let repo = TempRepo::new("gate-command-missing");
+    with_gate_command(&repo, "slipway-zzz-no-such-program --check");
+    let run = repo.tool(&["gate"]);
+    assert_eq!(run.code, 2, "{}", run.output());
+    assert!(
+        run.verdict().contains("slipway-zzz-no-such-program"),
+        "{}",
+        run.output()
+    );
+}
+
 #[test]
 fn explicit_tree_is_checked_instead_of_the_working_tree() {
     let repo = TempRepo::new("gate-explicit-tree");

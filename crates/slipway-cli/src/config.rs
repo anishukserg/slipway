@@ -7,9 +7,13 @@
 //! умолчания повторяют прежнюю зашитую раскладку.
 //!
 //! Настройке подлежит форма, а не правило: корень реестра, набор типов темы и
-//! её предел, ссылка на правила коммитов продукта и темы служебных коммитов
-//! журнала. Трейлер основания, неизменность события, доказательство, формат
-//! журнала и машинный контракт вывода не настраиваются.
+//! её предел, ссылка на правила коммитов продукта, темы служебных коммитов
+//! журнала и пол числа прошедших атакующих doctest. Трейлер основания,
+//! неизменность события, доказательство, формат журнала и машинный контракт
+//! вывода не настраиваются.
+//!
+//! Значение-команда — `gate_command` и `message_command` — делегирует проверку
+//! проекту: Slipway запускает её и считает её вердикт своим.
 //!
 //! Настройка читается из того же дерева, что и проверяемое: калитка — из
 //! проверяемого дерева, проверка сообщения — из индекса или из дерева коммита,
@@ -49,6 +53,13 @@ pub struct Config {
     pub subject_slice_closed: String,
     /// Тема коммита восстановления журнала из истории.
     pub subject_imported: String,
+    /// Пол числа прошедших атакующих doctest: ниже него калитка отказывает.
+    pub doctest_floor: usize,
+    /// Команда проекта, выполняемая шагом калитки; `None` — шага нет.
+    pub gate_command: Option<Vec<String>>,
+    /// Команда проекта, проверяющая форму темы; `None` — форму проверяет сам
+    /// Slipway.
+    pub message_command: Option<Vec<String>>,
 }
 
 impl Default for Config {
@@ -68,6 +79,9 @@ impl Default for Config {
             subject_abandoned: "[PLAN]({scope}): work {id} abandoned".to_owned(),
             subject_slice_closed: "[PLAN]({scope}): slice {id} closed".to_owned(),
             subject_imported: "[PLAN]({scope}): journal restored from history".to_owned(),
+            doctest_floor: 36,
+            gate_command: None,
+            message_command: None,
         }
     }
 }
@@ -146,6 +160,13 @@ impl Config {
                 "subject_abandoned" => config.subject_abandoned = template(key, value)?,
                 "subject_slice_closed" => config.subject_slice_closed = template(key, value)?,
                 "subject_imported" => config.subject_imported = template(key, value)?,
+                "doctest_floor" => {
+                    config.doctest_floor = value.parse().map_err(|_| {
+                        format!("key `{key}` takes a number of passed doctests, not `{value}`")
+                    })?;
+                }
+                "gate_command" => config.gate_command = Some(command(key, value)?),
+                "message_command" => config.message_command = Some(command(key, value)?),
                 _ => return Err(format!("unknown key `{key}`")),
             }
         }
@@ -190,6 +211,20 @@ fn types(key: &str, value: &str) -> Result<Vec<String>, String> {
     Ok(types)
 }
 
+/// Команда проекта: разбивается по пробелам, первое слово — программа,
+/// остальные — её аргументы.
+///
+/// Оболочка не запускается: `&&`, `|`, перенаправления и кавычки в значении не
+/// работают — они стали бы обычными аргументами программы. Составную проверку
+/// проект прячет в свой скрипт и называет здесь его.
+fn command(key: &str, value: &str) -> Result<Vec<String>, String> {
+    let words: Vec<String> = value.split_whitespace().map(str::to_owned).collect();
+    if words.is_empty() {
+        return Err(format!("key `{key}` has an empty value"));
+    }
+    Ok(words)
+}
+
 /// Шаблон темы: подстановки только `{scope}` и `{id}`. Неизвестная осталась бы
 /// в теме буквально, и служебный коммит ушёл бы в историю с `{work}` в теме.
 fn template(key: &str, value: &str) -> Result<String, String> {
@@ -222,6 +257,9 @@ mod tests {
         assert_eq!(config.doc_manifest(), "doc/Cargo.toml");
         assert_eq!(config.subject_limit, 72);
         assert_eq!(config.commit_rules, "commit rules");
+        assert_eq!(config.doctest_floor, 36);
+        assert_eq!(config.gate_command, None);
+        assert_eq!(config.message_command, None);
         assert!(config.commit_types.contains(&"CHORE".to_owned()));
         assert_eq!(
             fill(&config.subject_started, "cli", "w0033"),
@@ -242,8 +280,22 @@ mod tests {
             "subject_limit = \"90\"\n",
             "commit_rules = \"docs/COMMITS.md\"\n",
             "subject_started = \"[CHANGE]({scope}): started {id}\"\n",
+            "doctest_floor = \"5\"\n",
+            "gate_command = \"make  check --all\"\n",
+            "message_command = \"scripts/commit-msg\"\n",
         ))
         .expect("настройка разобрана");
+        assert_eq!(config.doctest_floor, 5);
+        // Команда разбивается по пробелам: первое слово — программа, остальные —
+        // аргументы; оболочки нет.
+        assert_eq!(
+            config.gate_command.as_deref(),
+            Some(["make".to_owned(), "check".to_owned(), "--all".to_owned()].as_slice())
+        );
+        assert_eq!(
+            config.message_command.as_deref(),
+            Some(["scripts/commit-msg".to_owned()].as_slice())
+        );
         assert_eq!(config.work_dir(), "docs/registry/work");
         assert_eq!(config.journal_dir(), "docs/registry/journal");
         assert_eq!(config.commit_types, ["FEAT", "CHANGE"]);
@@ -274,6 +326,18 @@ mod tests {
                 "type `feat` is not in uppercase",
             ),
             ("doc = \"/\"\n", "key `doc` has an empty value"),
+            (
+                "doctest_floor = \"половина\"\n",
+                "key `doctest_floor` takes a number of passed doctests",
+            ),
+            (
+                "gate_command = \"  \"\n",
+                "key `gate_command` has an empty value",
+            ),
+            (
+                "message_command = \"\"\n",
+                "key `message_command` has an empty value",
+            ),
             (
                 "subject_landed = \"[PLAN]({scope}): {work} landed\"\n",
                 "unknown substitution `{work}`",

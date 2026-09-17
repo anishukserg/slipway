@@ -16,6 +16,11 @@ pub const COMMIT_LOCK: &str = "slipway-commit.lock";
 /// Сообщение коммита события журнала, в каталоге git.
 pub const JOURNAL_MESSAGE: &str = "slipway-journal-message";
 
+/// Сообщение проверяемого коммита для делегированной команды, в каталоге git:
+/// в режиме `--range` сообщение берётся из git, а команде нужен файл
+/// (решение 20). Убирается сразу после запуска команды.
+pub const CHECKED_MESSAGE: &str = "slipway-checked-message";
+
 /// Корневой манифест: рабочее пространство и `rust-version`.
 pub const MANIFEST: &str = "Cargo.toml";
 
